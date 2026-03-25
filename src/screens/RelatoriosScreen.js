@@ -1,15 +1,17 @@
 import { Euro, Leaf, Percent } from 'lucide-react-native';
-import { useEffect, useState } from 'react';
+import { useContext, useEffect, useState } from 'react';
 import { ActivityIndicator, Dimensions, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { LineChart } from 'react-native-chart-kit';
 import { api, theme } from '../api/api';
+import { AppContext } from '../context/AppContext'; // Importação do contexto global
 
 const screenWidth = Dimensions.get('window').width;
-
 const CUSTO_KWH_EUROS = 0.16;
 const FATOR_EMISSAO_CO2 = 0.25;
 
 export default function RelatoriosScreen() {
+  const { filialAtiva } = useContext(AppContext); // Ler a loja selecionada
+
   const [relatorios, setRelatorios] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -36,25 +38,30 @@ export default function RelatoriosScreen() {
     );
   }
 
+  // Filtragem dos dados ESG pela loja selecionada
+  const relatoriosFiltrados = filialAtiva === 'Todas' 
+    ? relatorios 
+    : relatorios.filter(r => r.filial === filialAtiva);
+
   // Cálculos Básicos
   let somaKwh = 0;
   let leiturasNoLimite = 0;
   
-  // Pegando apenas as últimas 15 leituras para o gráfico mobile não ficar poluído
-  const ultimasLeituras = relatorios.slice(-15);
+  // Pegando as últimas 15 leituras da lista já filtrada para o gráfico
+  const ultimasLeituras = relatoriosFiltrados.slice(-15);
   const labels = ultimasLeituras.map(r => new Date(r.data_hora).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
   const dataTemp = ultimasLeituras.map(r => parseFloat(r.temperatura));
   const dataKwh = ultimasLeituras.map(r => parseFloat(r.consumo_kwh));
 
-  relatorios.forEach(r => {
+  // Processamento dos totais apenas para a filial atual
+  relatoriosFiltrados.forEach(r => {
     somaKwh += parseFloat(r.consumo_kwh || 0);
-    // Simulação simplificada de SLA baseada em uma média de 2 a 8 graus
     if (parseFloat(r.temperatura) >= 2 && parseFloat(r.temperatura) <= 8) {
       leiturasNoLimite++;
     }
   });
 
-  const slaCompliance = relatorios.length > 0 ? ((leiturasNoLimite / relatorios.length) * 100).toFixed(1) : 0;
+  const slaCompliance = relatoriosFiltrados.length > 0 ? ((leiturasNoLimite / relatoriosFiltrados.length) * 100).toFixed(1) : 0;
   const co2 = (somaKwh * FATOR_EMISSAO_CO2).toFixed(1);
   const custo = (somaKwh * CUSTO_KWH_EUROS).toFixed(2);
 
@@ -115,7 +122,7 @@ export default function RelatoriosScreen() {
             style={{ borderRadius: 16, marginVertical: 8 }}
           />
         ) : (
-          <Text style={{ textAlign: 'center', color: theme.textMuted, padding: 20 }}>Sem dados suficientes para o gráfico.</Text>
+          <Text style={{ textAlign: 'center', color: theme.textMuted, padding: 20 }}>Sem dados suficientes para a loja selecionada.</Text>
         )}
       </View>
 

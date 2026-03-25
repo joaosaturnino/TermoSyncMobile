@@ -1,9 +1,12 @@
 import { AlertTriangle, ClipboardCheck, PlusCircle, Trash2 } from 'lucide-react-native';
-import { useEffect, useState } from 'react';
+import { useContext, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { api, theme } from '../api/api';
+import { AppContext } from '../context/AppContext'; // Importação do contexto global
 
 export default function EquipamentosScreen() {
+  const { filialAtiva } = useContext(AppContext); // Ler a loja selecionada no menu
+
   const [equipamentos, setEquipamentos] = useState([]);
   const [loading, setLoading] = useState(false);
 
@@ -58,6 +61,11 @@ export default function EquipamentosScreen() {
     ]);
   };
 
+  // Aplicação do Filtro na lista de Equipamentos
+  const equipamentosFiltrados = filialAtiva === 'Todas' 
+    ? equipamentos 
+    : equipamentos.filter(eq => eq.filial === filialAtiva);
+
   const renderFormulario = () => (
     <View style={styles.formContainer}>
       <View style={styles.formHeader}>
@@ -79,12 +87,13 @@ export default function EquipamentosScreen() {
         {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnSalvarText}>Adicionar Máquina</Text>}
       </TouchableOpacity>
       
-      <Text style={styles.listTitle}>Parque Instalado</Text>
+      <Text style={styles.listTitle}>
+        Parque Instalado: {filialAtiva === 'Todas' ? 'Visão Global' : filialAtiva}
+      </Text>
     </View>
   );
 
   const renderItem = ({ item }) => {
-    // Lógica simplificada de calibração para o mobile
     const diasCalib = item.data_calibracao ? Math.floor((Date.now() - new Date(item.data_calibracao).getTime()) / (1000 * 60 * 60 * 24)) : 0;
     const calibCritica = diasCalib > 365;
 
@@ -116,11 +125,12 @@ export default function EquipamentosScreen() {
   return (
     <View style={styles.container}>
       <FlatList
-        data={equipamentos}
+        data={equipamentosFiltrados} // Renderiza a lista já filtrada
         keyExtractor={(item) => item.id.toString()}
         renderItem={renderItem}
         ListHeaderComponent={renderFormulario}
         contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
+        ListEmptyComponent={<Text style={{textAlign: 'center', color: theme.textMuted}}>Nenhum equipamento para exibir nesta loja.</Text>}
       />
     </View>
   );

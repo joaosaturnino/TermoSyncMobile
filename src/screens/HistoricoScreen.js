@@ -1,9 +1,12 @@
 import { AlertTriangle, Calendar, History } from 'lucide-react-native';
-import { useEffect, useState } from 'react';
+import { useContext, useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, StyleSheet, Text, View } from 'react-native';
 import { api, theme } from '../api/api';
+import { AppContext } from '../context/AppContext'; // Importação do contexto global
 
 export default function HistoricoScreen() {
+  const { filialAtiva } = useContext(AppContext); // Ler a loja selecionada
+
   const [historico, setHistorico] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -22,8 +25,13 @@ export default function HistoricoScreen() {
     }
   };
 
+  // Filtrar o histórico para renderizar apenas os da loja ativa
+  const historicoFiltrado = filialAtiva === 'Todas' 
+    ? historico 
+    : historico.filter(h => h.filial === filialAtiva);
+
   const renderTimelineItem = ({ item, index }) => {
-    const isLast = index === historico.length - 1;
+    const isLast = index === historicoFiltrado.length - 1;
 
     return (
       <View style={styles.timelineItem}>
@@ -65,19 +73,21 @@ export default function HistoricoScreen() {
     <View style={styles.container}>
       <View style={styles.header}>
         <History color={theme.textMain} size={28} />
-        <Text style={styles.headerTitle}>Livro de Registo Oficial</Text>
+        <Text style={styles.headerTitle}>
+          Registo Oficial: {filialAtiva === 'Todas' ? 'Global' : filialAtiva}
+        </Text>
       </View>
 
       {loading ? (
         <ActivityIndicator size="large" color={theme.primary} style={{ marginTop: 50 }} />
       ) : (
         <FlatList
-          data={historico}
+          data={historicoFiltrado} // Aplica-se a lista filtrada aqui
           keyExtractor={(item) => item.id.toString()}
           renderItem={renderTimelineItem}
           contentContainerStyle={{ padding: 20, paddingBottom: 40 }}
           ListEmptyComponent={
-            <Text style={styles.emptyText}>Nenhum registo de auditoria encontrado.</Text>
+            <Text style={styles.emptyText}>Nenhum registo de auditoria para esta loja.</Text>
           }
         />
       )}

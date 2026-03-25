@@ -7,6 +7,7 @@ import {
     Settings,
     Thermometer
 } from 'lucide-react-native';
+import { useContext } from 'react';
 
 // Importação das Telas (Screens)
 import DashboardScreen from '../screens/DashboardScreen';
@@ -15,28 +16,37 @@ import HistoricoScreen from '../screens/HistoricoScreen';
 import RelatoriosScreen from '../screens/RelatoriosScreen';
 import SensoresScreen from '../screens/SensoresScreen';
 
-// Importação das Cores Globais
-import { theme } from '../api/api';
+// Importação do Custom Drawer e Contexto (Para Modo Escuro, Sair e RBAC)
+import { AppContext } from '../context/AppContext';
+import CustomDrawer from './CustomDrawer';
 
 const Drawer = createDrawerNavigator();
 
 export default function DrawerNavigator() {
+  // Consumir o tema global definido no AppContext
+  const { theme } = useContext(AppContext);
+
   return (
     <Drawer.Navigator
+      // Injeta o menu lateral personalizado que criámos
+      drawerContent={(props) => <CustomDrawer {...props} />}
       initialRouteName="Dashboard"
       screenOptions={{
-        // Estilização do Header (Barra de cima)
+        // Estilização do Header (Barra de cima) adaptada ao Tema
         headerStyle: { backgroundColor: theme.primary },
         headerTintColor: '#fff',
         headerTitleAlign: 'center',
         headerTitleStyle: { fontWeight: 'bold' },
         
-        // Estilização do Menu Lateral (Drawer)
+        // Estilização do Menu Lateral (Drawer) adaptada ao Tema
         drawerActiveBackgroundColor: theme.primary,
         drawerActiveTintColor: '#fff',
         drawerInactiveTintColor: theme.textMain,
         drawerLabelStyle: { fontSize: 15, fontWeight: '600', marginLeft: -10 },
         drawerItemStyle: { borderRadius: 8, paddingHorizontal: 5 },
+        
+        // Garante que o fundo das telas muda para escuro/claro automaticamente
+        sceneContainerStyle: { backgroundColor: theme.bg } 
       }}
     >
       <Drawer.Screen 

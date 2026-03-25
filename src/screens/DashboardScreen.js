@@ -1,9 +1,13 @@
 import { AlertTriangle } from 'lucide-react-native';
-import { useEffect, useState } from 'react';
+import { useContext, useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { api, theme } from '../api/api';
+import { AppContext } from '../context/AppContext'; // <-- IMPORTAMOS O CONTEXTO
 
 export default function DashboardScreen() {
+  // 1. LER A LOJA SELECIONADA NO MENU LATERAL
+  const { filialAtiva } = useContext(AppContext); 
+
   const [equipamentos, setEquipamentos] = useState([]);
   const [notificacoes, setNotificacoes] = useState([]);
 
@@ -33,31 +37,38 @@ export default function DashboardScreen() {
     }
   };
 
-  const qtdDegelo = equipamentos.filter(e => e.em_degelo).length;
-  const qtdFalha = equipamentos.filter(e => !e.motor_ligado && !e.em_degelo).length;
-  const qtdOperando = equipamentos.length - qtdDegelo - qtdFalha;
+  // 2. APLICAR O FILTRO (Se for 'Todas' mostra tudo, senão filtra pela filial)
+  const equipamentosDaFilial = filialAtiva === 'Todas' ? equipamentos : equipamentos.filter(eq => eq.filial === filialAtiva);
+  const notificacoesDaFilial = filialAtiva === 'Todas' ? notificacoes : notificacoes.filter(n => n.filial === filialAtiva);
+
+  // 3. RECALCULAR KPIs APENAS PARA A LOJA SELECIONADA
+  const qtdDegelo = equipamentosDaFilial.filter(e => e.em_degelo).length;
+  const qtdFalha = equipamentosDaFilial.filter(e => !e.motor_ligado && !e.em_degelo).length;
+  const qtdOperando = equipamentosDaFilial.length - qtdDegelo - qtdFalha;
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ padding: 16 }}>
       
       {/* KPIs */}
       <View style={styles.kpiContainer}>
-        <View style={styles.kpiCard}><Text style={styles.kpiTitle}>Parque IoT</Text><Text style={styles.kpiValue}>{equipamentos.length}</Text></View>
+        <View style={styles.kpiCard}><Text style={styles.kpiTitle}>Parque IoT</Text><Text style={styles.kpiValue}>{equipamentosDaFilial.length}</Text></View>
         <View style={styles.kpiCard}><Text style={styles.kpiTitle}>Operação</Text><Text style={[styles.kpiValue, { color: theme.success }]}>{qtdOperando}</Text></View>
         <View style={styles.kpiCard}><Text style={styles.kpiTitle}>Degelo</Text><Text style={[styles.kpiValue, { color: theme.info }]}>{qtdDegelo}</Text></View>
         <View style={styles.kpiCard}><Text style={styles.kpiTitle}>Anomalias</Text><Text style={[styles.kpiValue, { color: theme.danger }]}>{qtdFalha}</Text></View>
       </View>
 
-      <Text style={styles.sectionTitle}>Painel Operacional e Triagem</Text>
+      <Text style={styles.sectionTitle}>
+        Painel Operacional: {filialAtiva === 'Todas' ? 'Visão Global' : filialAtiva}
+      </Text>
 
-      {/* Alertas */}
-      {notificacoes.length === 0 ? (
+      {/* Alertas Filtrados */}
+      {notificacoesDaFilial.length === 0 ? (
         <View style={styles.emptyState}>
           <Text style={{ color: theme.success, fontWeight: 'bold', fontSize: 18 }}>Plataforma Limpa</Text>
-          <Text style={{ color: theme.textMuted, textAlign: 'center' }}>Temperatura, rede e metrologia dentro dos conformes legais.</Text>
+          <Text style={{ color: theme.textMuted, textAlign: 'center' }}>Temperatura e rede dentro dos conformes.</Text>
         </View>
       ) : (
-        notificacoes.map(notif => (
+        notificacoesDaFilial.map(notif => (
           <View key={notif.id} style={styles.alertCard}>
             <View style={styles.alertHeader}>
               <AlertTriangle color={theme.danger} size={24} />

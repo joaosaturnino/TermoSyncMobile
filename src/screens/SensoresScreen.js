@@ -1,9 +1,12 @@
 import { Droplets, Power, Thermometer } from 'lucide-react-native';
-import React, { useEffect, useState } from 'react';
+import { useContext, useEffect, useState } from 'react';
 import { FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { api, theme } from '../api/api';
+import { AppContext } from '../context/AppContext'; // <-- IMPORTAR CONTEXTO
 
 export default function SensoresScreen({ isTemp = true }) {
+  const { filialAtiva } = useContext(AppContext); // <-- LER LOJA SELECIONADA
+
   const [equipamentos, setEquipamentos] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -26,6 +29,9 @@ export default function SensoresScreen({ isTemp = true }) {
     carregarSensores();
   }, []);
 
+  // FILTRAR A LISTA ANTES DE RENDERIZAR NO FLATLIST
+  const equipamentosFiltrados = filialAtiva === 'Todas' ? equipamentos : equipamentos.filter(eq => eq.filial === filialAtiva);
+
   const renderItem = ({ item: eq }) => {
     const valor = isTemp ? eq.ultima_temp : eq.ultima_umidade;
     const min = isTemp ? parseFloat(eq.temp_min) : parseFloat(eq.umidade_min || 40);
@@ -35,7 +41,6 @@ export default function SensoresScreen({ isTemp = true }) {
     const isBaixa = valor < min;
     const isAnomalia = (isAlta || isBaixa) && !eq.em_degelo;
     
-    // Cálculo da barra térmica
     let percent = ((valor || min) - min) / (max - min) * 100;
     if (percent > 100) percent = 100;
     if (percent < 5) percent = 5;
@@ -61,7 +66,6 @@ export default function SensoresScreen({ isTemp = true }) {
             </View>
             <Text style={styles.limitesText}>{min}{isTemp ? '°C' : '%'} a {max}{isTemp ? '°C' : '%'}</Text>
             
-            {/* Barra Térmica */}
             <View style={[styles.thermalBarBg, !isTemp && { backgroundColor: 'rgba(0,0,0,0.2)' }]}>
               <View style={[styles.thermalBarFill, { width: `${percent}%`, backgroundColor: !isTemp ? '#fff' : barColor }]} />
             </View>
@@ -86,17 +90,19 @@ export default function SensoresScreen({ isTemp = true }) {
       </View>
 
       <FlatList
-        data={equipamentos}
+        data={equipamentosFiltrados} // <-- USAR A LISTA FILTRADA AQUI
         keyExtractor={(item) => item.id.toString()}
         renderItem={renderItem}
         contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[theme.primary]} />}
+        ListEmptyComponent={<Text style={{textAlign: 'center', marginTop: 30, color: theme.textMuted}}>Nenhum equipamento para a loja selecionada.</Text>}
       />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  //... Mantenha exatamente os mesmos styles que já tinha no SensoresScreen
   container: { flex: 1, backgroundColor: theme.bg },
   header: { flexDirection: 'row', alignItems: 'center', padding: 16, backgroundColor: theme.card, borderBottomWidth: 1, borderBottomColor: theme.border },
   headerTitle: { fontSize: 20, fontWeight: 'bold', color: theme.textMain, marginLeft: 10 },

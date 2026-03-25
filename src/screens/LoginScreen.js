@@ -20,7 +20,18 @@ export default function LoginScreen({ onLogin }) {
       api.defaults.headers.common['Authorization'] = `Bearer ${res.data.token}`;
       onLogin(res.data);
     } catch (error) {
-      Alert.alert('Erro', 'Credenciais incorretas.');
+      // Aqui está o truque para saber o erro real:
+      if (error.response) {
+        // O servidor respondeu (Erro 401 - Senha errada mesmo)
+        Alert.alert('Falha no Login', error.response.data.error || 'Credenciais incorretas.');
+      } else {
+        // O servidor nem sequer foi encontrado (Erro de Rede / IP errado)
+        Alert.alert(
+          'Servidor Inacessível', 
+          'Não foi possível conectar ao backend. Verifique se o IP em api.js está correto e se o PC e o Telemóvel estão no mesmo Wi-Fi.'
+        );
+        console.log('Erro detalhado:', error.message);
+      }
     } finally {
       setLoading(false);
     }

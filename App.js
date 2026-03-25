@@ -3,32 +3,33 @@ import { NavigationContainer } from '@react-navigation/native';
 import { useEffect, useState } from 'react';
 import 'react-native-gesture-handler';
 import { api } from './src/api/api';
+import { AppProvider } from './src/context/AppContext';
 import DrawerNavigator from './src/navigation/DrawerNavigator';
 import LoginScreen from './src/screens/LoginScreen';
 
 export default function App() {
   const [userData, setUserData] = useState(null);
 
-  useEffect(() => {
-    checkToken();
-  }, []);
+  useEffect(() => { checkToken(); }, []);
 
   const checkToken = async () => {
     const token = await AsyncStorage.getItem('token');
     if (token) {
       api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-      setUserData({ token }); // Simplificado. O ideal é validar o token no backend.
+      setUserData({ token });
     }
   };
 
-  const handleLogin = (data) => {
-    setUserData(data);
-  };
+  const handleLogin = (data) => setUserData(data);
+  const handleLogout = () => setUserData(null); // Limpa o estado e força voltar ao Login
 
   return (
     <NavigationContainer>
       {userData ? (
-        <DrawerNavigator />
+        // Se logado, envolve a app no Contexto passando a função de logout
+        <AppProvider onLogout={handleLogout}>
+          <DrawerNavigator />
+        </AppProvider>
       ) : (
         <LoginScreen onLogin={handleLogin} />
       )}
