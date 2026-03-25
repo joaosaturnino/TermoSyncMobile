@@ -1,19 +1,28 @@
-import { AlertTriangle } from 'lucide-react-native';
+import {
+  ActivitySquare,
+  AlertTriangle,
+  CheckCircle,
+  ClipboardCheck,
+  DoorOpen,
+  Power,
+  Snowflake,
+  Wifi
+} from 'lucide-react-native';
 import { useContext, useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { api, theme } from '../api/api';
-import { AppContext } from '../context/AppContext'; // <-- IMPORTAMOS O CONTEXTO
+import { Alert, Dimensions, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { PieChart } from 'react-native-chart-kit';
+import { api } from '../api/api';
+import { AppContext } from '../context/AppContext';
+
+const screenWidth = Dimensions.get('window').width;
 
 export default function DashboardScreen() {
-  // 1. LER A LOJA SELECIONADA NO MENU LATERAL
-  const { filialAtiva } = useContext(AppContext); 
-
+  const { filialAtiva, theme, refreshTrigger } = useContext(AppContext);
   const [equipamentos, setEquipamentos] = useState([]);
   const [notificacoes, setNotificacoes] = useState([]);
 
-  useEffect(() => {
-    carregarDados();
-  }, []);
+  // Atualiza em tempo real graças ao refreshTrigger do WebSocket no AppContext
+  useEffect(() => { carregarDados(); }, [refreshTrigger]);
 
   const carregarDados = async () => {
     try {
@@ -28,77 +37,187 @@ export default function DashboardScreen() {
     }
   };
 
-  const resolverNotificacao = async (id) => {
+  const resolverNotificacao = async (id, acaoText) => {
     try {
-      await api.put(`/notificacoes/${id}/resolver`, { nota_resolucao: 'Verificado via Mobile' });
+      await api.put(`/notificacoes/${id}/resolver`, { nota_resolucao: `${acaoText} via Mobile` });
       carregarDados();
     } catch (e) {
       console.log(e);
     }
   };
 
-  // 2. APLICAR O FILTRO (Se for 'Todas' mostra tudo, senão filtra pela filial)
+  const resolverTodasNotificacoes = () => {
+    Alert.alert('Limpeza do Painel', 'Arquivar todos os alarmes pendentes?', [
+      { text: 'Cancelar', style: 'cancel' },
+      { text: 'Confirmar', onPress: async () => {
+          try {
+            await api.put('/notificacoes/resolver-todas');
+            carregarDados();
+          } catch (e) {
+            console.log(e);
+          }
+        }
+      }
+    ]);
+  };
+
   const equipamentosDaFilial = filialAtiva === 'Todas' ? equipamentos : equipamentos.filter(eq => eq.filial === filialAtiva);
   const notificacoesDaFilial = filialAtiva === 'Todas' ? notificacoes : notificacoes.filter(n => n.filial === filialAtiva);
 
-  // 3. RECALCULAR KPIs APENAS PARA A LOJA SELECIONADA
   const qtdDegelo = equipamentosDaFilial.filter(e => e.em_degelo).length;
   const qtdFalha = equipamentosDaFilial.filter(e => !e.motor_ligado && !e.em_degelo).length;
-  const qtdOperando = equipamentosDaFilial.length - qtdDegelo - qtdFalha;
+  const qtdTotal = equipamentosDaFilial.length;
+  const qtdOperando = qtdTotal - qtdDegelo - qtdFalha;
+
+  // Dados para o Gráfico Donut (Eficiência e Saúde do Frio)
+  const dadosDonutStatus = [
+    { name: 'Ok', value: qtdOperando, color: theme.success, legendFontColor: theme.textMuted, legendFontSize: 13 },
+    { name: 'Degelo', value: qtdDegelo, color: '#38bdf8', legendFontColor: theme.textMuted, legendFontSize: 13 },
+    { name: 'Falha', value: qtdFalha, color: theme.danger, legendFontColor: theme.textMuted, legendFontSize: 13 }
+  ].filter(d => d.value > 0);
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ padding: 16 }}>
+    <ScrollView style={[styles.container, { backgroundColor: theme.bg }]} contentContainerStyle={{ padding: 16 }}>
       
-      {/* KPIs */}
+      {/* 1. KPIs idênticos à versão Web */}
       <View style={styles.kpiContainer}>
-        <View style={styles.kpiCard}><Text style={styles.kpiTitle}>Parque IoT</Text><Text style={styles.kpiValue}>{equipamentosDaFilial.length}</Text></View>
-        <View style={styles.kpiCard}><Text style={styles.kpiTitle}>Operação</Text><Text style={[styles.kpiValue, { color: theme.success }]}>{qtdOperando}</Text></View>
-        <View style={styles.kpiCard}><Text style={styles.kpiTitle}>Degelo</Text><Text style={[styles.kpiValue, { color: theme.info }]}>{qtdDegelo}</Text></View>
-        <View style={styles.kpiCard}><Text style={styles.kpiTitle}>Anomalias</Text><Text style={[styles.kpiValue, { color: theme.danger }]}>{qtdFalha}</Text></View>
+        <View style={[styles.kpiCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <Text style={styles.kpiTitle}>Parque IoT</Text>
+          <Text style={[styles.kpiValue, { color: theme.textMain }]}>{qtdTotal}</Text>
+        </View>
+        <View style={[styles.kpiCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <Text style={styles.kpiTitle}>Operação Segura</Text>
+          <Text style={[styles.kpiValue, { color: theme.success }]}>{qtdOperando}</Text>
+        </View>
+        <View style={[styles.kpiCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <Text style={styles.kpiTitle}>Modo Degelo</Text>
+          <Text style={[styles.kpiValue, { color: '#38bdf8' }]}>{qtdDegelo}</Text>
+        </View>
+        <View style={[styles.kpiCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <Text style={styles.kpiTitle}>Anomalias Ativas</Text>
+          <Text style={[styles.kpiValue, { color: theme.danger }]}>{qtdFalha}</Text>
+        </View>
       </View>
 
-      <Text style={styles.sectionTitle}>
-        Painel Operacional: {filialAtiva === 'Todas' ? 'Visão Global' : filialAtiva}
-      </Text>
+      {/* 2. Gráfico Donut (Eficiência e Saúde do Frio) */}
+      <View style={[styles.donutContainer, { backgroundColor: theme.card, borderColor: theme.border }]}>
+        <Text style={styles.donutTitle}>Eficiência e Saúde do Frio</Text>
+        {dadosDonutStatus.length > 0 ? (
+          <PieChart
+            data={dadosDonutStatus}
+            width={screenWidth - 64} // Padding ajustado
+            height={160}
+            chartConfig={{ color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})` }}
+            accessor={"value"}
+            backgroundColor={"transparent"}
+            paddingLeft={"0"}
+            center={[10, 0]}
+            absolute
+          />
+        ) : (
+          <Text style={{ marginTop: 30, color: theme.textMuted }}>Sem dados operacionais</Text>
+        )}
+      </View>
 
-      {/* Alertas Filtrados */}
+      {/* 3. Cabeçalho Dinâmico da Triagem */}
+      <View style={styles.flexHeader}>
+        <Text style={[styles.sectionTitle, { color: theme.textMain }]}>Painel Operacional e Triagem</Text>
+        {notificacoesDaFilial.length > 0 && (
+          <TouchableOpacity style={[styles.btnOutline, { borderColor: theme.danger }]} onPress={resolverTodasNotificacoes}>
+            <CheckCircle size={16} color={theme.danger} style={{ marginRight: 5 }} />
+            <Text style={[styles.btnOutlineText, { color: theme.danger }]}>Arquivar Todos</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* 4. Estado Vazio / Alertas Dinâmicos */}
       {notificacoesDaFilial.length === 0 ? (
-        <View style={styles.emptyState}>
-          <Text style={{ color: theme.success, fontWeight: 'bold', fontSize: 18 }}>Plataforma Limpa</Text>
-          <Text style={{ color: theme.textMuted, textAlign: 'center' }}>Temperatura e rede dentro dos conformes.</Text>
+        <View style={[styles.emptyState, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <CheckCircle size={56} color={theme.success} style={{ marginBottom: 15 }} />
+          <Text style={{ color: theme.textMain, fontWeight: '800', fontSize: 18, marginBottom: 5 }}>Plataforma Limpa</Text>
+          <Text style={{ color: theme.textMuted, textAlign: 'center' }}>Temperatura, rede e metrologia dentro dos conformes legais.</Text>
         </View>
       ) : (
-        notificacoesDaFilial.map(notif => (
-          <View key={notif.id} style={styles.alertCard}>
-            <View style={styles.alertHeader}>
-              <AlertTriangle color={theme.danger} size={24} />
-              <Text style={styles.alertEquip}>{notif.equipamento_nome}</Text>
+        notificacoesDaFilial.map(notif => {
+          // Lógica Espelhada do App.jsx
+          const isRede = notif.tipo_alerta === 'REDE';
+          const isDegelo = notif.tipo_alerta === 'DEGELO';
+          const isMecanica = notif.tipo_alerta === 'MECANICA';
+          const isPorta = notif.tipo_alerta === 'PORTA';
+          const isPreditivo = notif.tipo_alerta === 'PREDITIVO';
+          const isMetrologia = notif.tipo_alerta === 'METROLOGIA';
+
+          let IconCmp = AlertTriangle;
+          let colorTheme = theme.danger;
+          let bgTheme = theme.dangerLight || '#fee2e2';
+
+          if (isRede) { IconCmp = Wifi; colorTheme = theme.warning; bgTheme = 'rgba(245, 158, 11, 0.1)'; } 
+          else if (isDegelo) { IconCmp = Snowflake; colorTheme = theme.info; bgTheme = 'rgba(56, 189, 248, 0.1)'; } 
+          else if (isMecanica) { IconCmp = Power; colorTheme = theme.alertMech || '#f97316'; bgTheme = 'rgba(249, 115, 22, 0.1)'; }
+          else if (isPorta) { IconCmp = DoorOpen; colorTheme = '#e11d48'; bgTheme = 'rgba(225, 29, 72, 0.1)'; }
+          else if (isPreditivo) { IconCmp = ActivitySquare; colorTheme = '#8b5cf6'; bgTheme = 'rgba(139, 92, 246, 0.05)'; } 
+          else if (isMetrologia) { IconCmp = ClipboardCheck; colorTheme = '#6366f1'; bgTheme = 'rgba(99, 102, 241, 0.05)'; }
+
+          let btnText = 'Resolver Anomalia';
+          if (isDegelo) btnText = 'Ocultar Degelo';
+          else if (isMecanica) btnText = 'Assinalar Manutenção';
+          else if (isPorta) btnText = 'Fechar Porta Física';
+          else if (isMetrologia) btnText = 'Arquivar Notificação';
+
+          const tempoFormatado = notif.data_hora ? new Date(notif.data_hora).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+
+          return (
+            <View key={notif.id} style={[styles.alertCard, { backgroundColor: bgTheme, borderLeftColor: colorTheme }]}>
+              <View style={styles.alertHeader}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                  <IconCmp color={colorTheme} size={22} />
+                  <Text style={[styles.alertEquip, { color: colorTheme }]}>{notif.equipamento_nome}</Text>
+                </View>
+                <View style={[styles.timeBadge, { backgroundColor: isDegelo ? 'rgba(56, 189, 248, 0.15)' : 'rgba(239, 68, 68, 0.1)' }]}>
+                  <Text style={{ color: colorTheme, fontSize: 11, fontWeight: '700' }}>{tempoFormatado}</Text>
+                </View>
+              </View>
+              
+              <Text style={[styles.badgeSetor, { backgroundColor: theme.bg, color: theme.textMuted }]}>{notif.filial} | {notif.setor}</Text>
+              <Text style={[styles.alertMsg, { color: theme.textMain }]}>{notif.mensagem}</Text>
+              
+              <TouchableOpacity 
+                style={[styles.actionBtn, { backgroundColor: colorTheme }]} 
+                onPress={() => resolverNotificacao(notif.id, btnText)}
+              >
+                <Text style={styles.actionBtnText}>{btnText}</Text>
+              </TouchableOpacity>
             </View>
-            <Text style={styles.badge}>{notif.filial} | {notif.setor}</Text>
-            <Text style={styles.alertMsg}>{notif.mensagem}</Text>
-            <TouchableOpacity style={styles.actionBtn} onPress={() => resolverNotificacao(notif.id)}>
-              <Text style={styles.actionBtnText}>Resolver Anomalia</Text>
-            </TouchableOpacity>
-          </View>
-        ))
+          );
+        })
       )}
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: theme.bg },
+  container: { flex: 1 },
   kpiContainer: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 20 },
-  kpiCard: { width: '48%', backgroundColor: theme.card, padding: 15, borderRadius: 12, marginBottom: 10, borderWidth: 1, borderColor: theme.border },
-  kpiTitle: { fontSize: 12, color: theme.textMuted, fontWeight: 'bold', textTransform: 'uppercase' },
-  kpiValue: { fontSize: 32, fontWeight: '900', color: theme.textMain, marginTop: 5 },
-  sectionTitle: { fontSize: 18, fontWeight: 'bold', color: theme.textMain, marginBottom: 15 },
-  emptyState: { alignItems: 'center', padding: 30, backgroundColor: theme.card, borderRadius: 12, borderWidth: 1, borderColor: theme.border, borderStyle: 'dashed' },
-  alertCard: { backgroundColor: '#fee2e2', borderLeftWidth: 5, borderLeftColor: theme.danger, padding: 15, borderRadius: 8, marginBottom: 15 },
-  alertHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
-  alertEquip: { fontSize: 18, fontWeight: 'bold', color: theme.danger, marginLeft: 10 },
-  badge: { backgroundColor: '#fca5a5', alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12, fontSize: 12, fontWeight: 'bold', color: '#7f1d1d', overflow: 'hidden', marginBottom: 10 },
-  alertMsg: { fontSize: 15, color: theme.textMain, marginBottom: 15 },
-  actionBtn: { backgroundColor: theme.danger, padding: 12, borderRadius: 8, alignItems: 'center' },
-  actionBtnText: { color: 'white', fontWeight: 'bold' }
+  kpiCard: { width: '48%', padding: 18, borderRadius: 12, marginBottom: 15, borderWidth: 1, elevation: 2, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 5 },
+  kpiTitle: { fontSize: 11, color: '#64748b', fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
+  kpiValue: { fontSize: 32, fontWeight: '900', marginTop: 8, letterSpacing: -1 },
+  
+  donutContainer: { padding: 15, borderRadius: 12, borderWidth: 1, alignItems: 'center', marginBottom: 25, elevation: 2 },
+  donutTitle: { fontSize: 12, fontWeight: '800', color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 },
+  
+  flexHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15, flexWrap: 'wrap' },
+  sectionTitle: { fontSize: 18, fontWeight: '800', letterSpacing: -0.5 },
+  btnOutline: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, paddingVertical: 6, paddingHorizontal: 12, borderRadius: 8 },
+  btnOutlineText: { fontSize: 12, fontWeight: '700' },
+  
+  emptyState: { alignItems: 'center', padding: 40, borderRadius: 12, borderWidth: 2, borderStyle: 'dashed', marginBottom: 30 },
+  
+  alertCard: { borderLeftWidth: 6, padding: 18, borderRadius: 10, marginBottom: 15, elevation: 1 },
+  alertHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10 },
+  alertEquip: { fontSize: 17, fontWeight: '800', marginLeft: 8, flexShrink: 1 },
+  timeBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 },
+  badgeSetor: { alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, fontSize: 11, fontWeight: '700', overflow: 'hidden', marginBottom: 12 },
+  alertMsg: { fontSize: 14, marginBottom: 15, fontWeight: '500', lineHeight: 20 },
+  actionBtn: { padding: 12, borderRadius: 8, alignItems: 'center' },
+  actionBtnText: { color: 'white', fontWeight: '800', fontSize: 13, textTransform: 'uppercase', letterSpacing: 0.5 }
 });

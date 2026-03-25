@@ -1,9 +1,11 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createContext, useEffect, useState } from 'react';
+import { io } from 'socket.io-client';
+import { BASE_URL } from '../api/api';
 
-// As duas paletas de cores baseadas no seu CSS
-export const lightTheme = { primary: '#059669', secondary: '#10b981', bg: '#f8fafc', card: '#ffffff', textMain: '#0f172a', textMuted: '#64748b', danger: '#ef4444', success: '#10b981', warning: '#f59e0b', info: '#38bdf8', border: '#e2e8f0' };
-export const darkTheme = { primary: '#059669', secondary: '#10b981', bg: '#0f172a', card: '#1e293b', textMain: '#f8fafc', textMuted: '#94a3b8', danger: '#ef4444', success: '#10b981', warning: '#f59e0b', info: '#38bdf8', border: '#334155' };
+// Cores exatas do App.css
+export const lightTheme = { primary: '#059669', secondary: '#10b981', bg: '#f8fafc', card: '#ffffff', textMain: '#0f172a', textMuted: '#64748b', danger: '#ef4444', dangerLight: '#fee2e2', success: '#10b981', warning: '#f59e0b', info: '#38bdf8', alertMech: '#f97316', border: '#e2e8f0', shadow: 'rgba(0, 0, 0, 0.05)' };
+export const darkTheme = { primary: '#059669', secondary: '#10b981', bg: '#0f172a', card: '#1e293b', textMain: '#f8fafc', textMuted: '#94a3b8', danger: '#ef4444', dangerLight: '#7f1d1d', success: '#10b981', warning: '#f59e0b', info: '#38bdf8', alertMech: '#ea580c', border: '#334155', shadow: 'rgba(0, 0, 0, 0.5)' };
 
 export const AppContext = createContext();
 
@@ -12,14 +14,22 @@ export const AppProvider = ({ children, onLogout }) => {
   const [userRole, setUserRole] = useState('LOJA');
   const [userFilial, setUserFilial] = useState('');
   const [filialAtiva, setFilialAtiva] = useState('Todas');
+  const [listaFiliais] = useState(['Todas', 'Loja Porto', 'Loja Lisboa', 'Loja Coimbra', 'Loja Faro', 'Loja Braga', 'Loja Aveiro', 'Loja Évora']);
   
-  // Numa app real, pode buscar esta lista da sua API (rotas de equipamentos)
-  const [listaFiliais, setListaFiliais] = useState(['Todas', 'Loja Porto', 'Loja Lisboa', 'Loja Coimbra', 'Loja Faro', 'Loja Braga', 'Loja Aveiro', 'Loja Évora']);
+  // Gatilho global para atualizar as telas em tempo real
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   const theme = isDarkMode ? darkTheme : lightTheme;
 
   useEffect(() => {
     carregarConfiguracoes();
+
+    // Ligar o WebSocket idêntico ao App.jsx da Web
+    const socket = io(BASE_URL);
+    socket.on('atualizacao_dados', () => setRefreshTrigger(prev => prev + 1));
+    socket.on('nova_leitura', () => setRefreshTrigger(prev => prev + 1));
+
+    return () => socket.disconnect();
   }, []);
 
   const carregarConfiguracoes = async () => {
@@ -28,9 +38,9 @@ export const AppProvider = ({ children, onLogout }) => {
     const mode = await AsyncStorage.getItem('theme');
     
     if (role) setUserRole(role);
-    if (filial) {
-      setUserFilial(filial);
-      setFilialAtiva(role === 'ADMIN' ? 'Todas' : filial);
+    if (filial) { 
+        setUserFilial(filial); 
+        setFilialAtiva(role === 'ADMIN' ? 'Todas' : filial); 
     }
     if (mode === 'dark') setIsDarkMode(true);
   };
@@ -43,11 +53,11 @@ export const AppProvider = ({ children, onLogout }) => {
 
   const logout = async () => {
     await AsyncStorage.clear();
-    onLogout(); // Função que será passada no App.js para voltar ao Login
+    onLogout();
   };
 
   return (
-    <AppContext.Provider value={{ theme, isDarkMode, toggleTheme, userRole, userFilial, filialAtiva, setFilialAtiva, listaFiliais, logout }}>
+    <AppContext.Provider value={{ theme, isDarkMode, toggleTheme, userRole, userFilial, filialAtiva, setFilialAtiva, listaFiliais, logout, refreshTrigger }}>
       {children}
     </AppContext.Provider>
   );

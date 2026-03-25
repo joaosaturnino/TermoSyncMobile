@@ -1,38 +1,29 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { NavigationContainer } from '@react-navigation/native';
-import { useEffect, useState } from 'react';
-import 'react-native-gesture-handler';
-import { api } from './src/api/api';
-import { AppProvider } from './src/context/AppContext';
-import DrawerNavigator from './src/navigation/DrawerNavigator';
-import LoginScreen from './src/screens/LoginScreen';
+import { AppContext } from './src/context/AppContext';
 
 export default function App() {
-  const [userData, setUserData] = useState(null);
-
-  useEffect(() => { checkToken(); }, []);
-
-  const checkToken = async () => {
-    const token = await AsyncStorage.getItem('token');
-    if (token) {
-      api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-      setUserData({ token });
-    }
+  // Os tokens de design (cores) idênticos ao CSS da Web
+  const theme = {
+    primary: '#059669',
+    secondary: '#10b981',
+    bg: '#f8fafc',
+    card: '#ffffff',
+    textMain: '#0f172a',
+    textMuted: '#64748b',
+    border: '#e2e8f0',
+    danger: '#ef4444',
+    warning: '#f59e0b',
+    info: '#38bdf8'
   };
 
-  const handleLogin = (data) => setUserData(data);
-  const handleLogout = () => setUserData(null); // Limpa o estado e força voltar ao Login
-
   return (
-    <NavigationContainer>
-      {userData ? (
-        // Se logado, envolve a app no Contexto passando a função de logout
-        <AppProvider onLogout={handleLogout}>
-          <DrawerNavigator />
-        </AppProvider>
-      ) : (
-        <LoginScreen onLogin={handleLogin} />
-      )}
-    </NavigationContainer>
+    // O Provider TEM de envolver toda a aplicação e passar o theme
+    <AppContext.Provider value={{ 
+      theme, 
+      filialAtiva: 'Todas', 
+      userRole: 'ADMIN', 
+      userFilial: '' 
+    }}>
+      {/* O seu LoginScreen ou Navegador entra aqui */}
+    </AppContext.Provider>
   );
 }

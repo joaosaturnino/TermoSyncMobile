@@ -1,158 +1,223 @@
-import { AlertTriangle, ClipboardCheck, PlusCircle, Trash2 } from 'lucide-react-native';
-import { useContext, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { api, theme } from '../api/api';
-import { AppContext } from '../context/AppContext'; // Importação do contexto global
+import {
+  AlertTriangle, ClipboardCheck,
+  Edit,
+  PlusCircle,
+  Save,
+  ShieldCheck, Thermometer,
+  Trash2,
+  X
+} from 'lucide-react-native';
+import React, { useCallback, useContext, useEffect, useState } from 'react';
+import {
+  Alert, FlatList,
+  Modal, RefreshControl,
+  ScrollView,
+  StyleSheet, Text,
+  TextInput, TouchableOpacity, View
+} from 'react-native';
+import { api } from '../api/api';
+import { AppContext } from '../context/AppContext';
+
+const EquipamentoCard = React.memo(({ item, onDelete, onEdit, theme }) => {
+  const diasCalib = item.data_calibracao ? Math.floor((Date.now() - new Date(item.data_calibracao).getTime()) / (1000 * 60 * 60 * 24)) : 0;
+  const calibCritica = diasCalib > 365;
+
+  return (
+    <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
+      <View style={styles.cardInfo}>
+        <View style={styles.badgeRow}>
+          <View style={[styles.statusDot, { backgroundColor: item.em_degelo ? '#38bdf8' : (item.motor_ligado ? '#10b981' : '#ef4444') }]} />
+          <Text style={[styles.badgeFilial, { backgroundColor: theme.bg, color: theme.primary }]}>{String(item.filial).toUpperCase()}</Text>
+          <Text style={[styles.badgeSetor, { backgroundColor: theme.border, color: theme.textMuted }]}>{item.setor}</Text>
+        </View>
+        <Text style={[styles.equipNome, { color: theme.textMain }]}>{item.nome}</Text>
+        <Text style={[styles.subText, { color: theme.textMuted }]}>{item.tipo}</Text>
+        <View style={styles.divider} />
+        <View style={styles.metrologiaGrid}>
+          <View style={styles.metrologiaItem}>
+             <View style={styles.labelRow}>
+                {calibCritica ? <AlertTriangle size={14} color="#ef4444" /> : <ClipboardCheck size={14} color="#10b981" />}
+                <Text style={[styles.metrologiaLabel, { color: calibCritica ? '#ef4444' : '#10b981' }]}> CALIBRAÇÃO</Text>
+             </View>
+             <Text style={[styles.metrologiaValue, { color: theme.textMain }]}>Há {diasCalib} dias</Text>
+          </View>
+          <View style={styles.metrologiaItem}>
+             <View style={styles.labelRow}>
+                <Thermometer size={14} color={theme.textMuted} />
+                <Text style={[styles.metrologiaLabel, { color: theme.textMuted }]}> LIMITE SLA</Text>
+             </View>
+             <Text style={[styles.metrologiaValue, { color: theme.textMain }]}>{item.temp_min}°C a {item.temp_max}°C</Text>
+          </View>
+        </View>
+      </View>
+      <View style={styles.actionColumn}>
+        <TouchableOpacity style={styles.btnAction} onPress={() => onEdit(item)}><Edit color={theme.primary} size={20} /></TouchableOpacity>
+        <TouchableOpacity style={[styles.btnAction, { marginTop: 10 }]} onPress={() => onDelete(item.id, item.nome)}><Trash2 color="#ef4444" size={20} /></TouchableOpacity>
+      </View>
+    </View>
+  );
+});
 
 export default function EquipamentosScreen() {
-  const { filialAtiva } = useContext(AppContext); // Ler a loja selecionada no menu
-
+  const { filialAtiva, theme, userRole, userFilial } = useContext(AppContext);
   const [equipamentos, setEquipamentos] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [editMode, setEditMode] = useState(false);
 
-  // Estado do Formulário
-  const [form, setForm] = useState({
-    nome: '', filial: '', setor: '', tipo: '', temp_min: '', temp_max: '',
-    umidade_min: '', umidade_max: '', intervalo_degelo: '6', duracao_degelo: '30'
-  });
+  const formInicial = {
+    nome: '', filial: userRole === 'LOJA' ? userFilial : '', setor: '', tipo: '', 
+    temp_min: '', temp_max: '', umidade_min: '', umidade_max: '', 
+    intervalo_degelo: '6', duracao_degelo: '30', data_calibracao: new Date().toISOString().split('T')[0]
+  };
 
-  useEffect(() => {
-    carregarEquipamentos();
-  }, []);
+  const [form, setForm] = useState(formInicial);
+  const setores = ['Farmácia / Vacinas', 'Açougue', 'Padaria', 'Frios', 'FLV'];
+  const tipos = ['Câmara Frigorífica', 'Ilha de Congelados', 'Balcão Refrigerado Aberto'];
 
-  const carregarEquipamentos = async () => {
+  const carregarDados = useCallback(async () => {
     try {
       const res = await api.get('/equipamentos');
       setEquipamentos(res.data);
-    } catch (error) {
-      console.log('Erro ao carregar equipamentos', error);
+    } catch (error) { console.log('Erro ao carregar', error); } finally { setLoading(false); setRefreshing(false); }
+  }, []);
+
+  useEffect(() => { carregarDados(); }, [carregarDados]);
+
+  // Extrai as lojas únicas existentes no banco de dados
+  const lojasExistentes = [...new Set(equipamentos.map(eq => eq.filial))];
+
+  const aplicarNormaANVISA = () => {
+    if (!form.setor || !form.tipo) return Alert.alert('Atenção', 'Selecione Setor e Tipo primeiro.');
+    let tMin = '', tMax = '', uMin = '', uMax = '';
+    if (form.setor === 'Farmácia / Vacinas') {
+      if (form.tipo.includes('Congelados')) { tMin = '-25'; tMax = '-15'; uMin = '35'; uMax = '60'; } 
+      else { tMin = '2'; tMax = '8'; uMin = '35'; uMax = '65'; }
+    } else {
+      if (form.tipo.includes('Congelados')) { tMin = '-24'; tMax = '-18'; uMin = '60'; uMax = '80'; } 
+      else if (form.setor === 'Açougue') { tMin = '0'; tMax = '4'; uMin = '85'; uMax = '95'; } 
+      else if (form.setor === 'FLV') { tMin = '8'; tMax = '12'; uMin = '85'; uMax = '95'; } 
+      else { tMin = '0'; tMax = '8'; uMin = '60'; uMax = '85'; }
     }
+    setForm(prev => ({ ...prev, temp_min: tMin, temp_max: tMax, umidade_min: uMin, umidade_max: uMax }));
   };
 
   const salvarEquipamento = async () => {
-    if (!form.nome || !form.filial || !form.tipo) {
-      return Alert.alert('Atenção', 'Preencha os campos obrigatórios (Nome, Filial, Tipo).');
-    }
-    setLoading(true);
+    if (!form.nome || !form.filial || !form.setor || !form.tipo) return Alert.alert('Erro', 'Preencha os campos obrigatórios.');
     try {
-      await api.post('/equipamentos', form);
-      Alert.alert('Sucesso', 'Equipamento registado com sucesso!');
-      setForm({ nome: '', filial: '', setor: '', tipo: '', temp_min: '', temp_max: '', umidade_min: '', umidade_max: '', intervalo_degelo: '6', duracao_degelo: '30' });
-      carregarEquipamentos();
-    } catch (error) {
-      Alert.alert('Erro', 'Falha ao gravar equipamento.');
-    } finally {
-      setLoading(false);
-    }
+      if (editMode) { await api.put(`/equipamentos/${form.id}/edit`, form); }
+      else { await api.post('/equipamentos', form); }
+      setModalVisible(false);
+      carregarDados();
+    } catch (error) { Alert.alert('Erro', 'Falha na operação.'); }
   };
 
-  const deletarEquipamento = (id, nome) => {
-    Alert.alert('Remover Máquina', `Remover "${nome}" permanentemente?`, [
-      { text: 'Cancelar', style: 'cancel' },
-      { text: 'Remover', style: 'destructive', onPress: async () => {
-          try {
-            await api.delete(`/equipamentos/${id}`);
-            carregarEquipamentos();
-          } catch (e) {
-            Alert.alert('Erro', 'Ação não autorizada.');
-          }
-        } 
-      }
-    ]);
-  };
-
-  // Aplicação do Filtro na lista de Equipamentos
-  const equipamentosFiltrados = filialAtiva === 'Todas' 
-    ? equipamentos 
-    : equipamentos.filter(eq => eq.filial === filialAtiva);
-
-  const renderFormulario = () => (
-    <View style={styles.formContainer}>
-      <View style={styles.formHeader}>
-        <PlusCircle color={theme.primary} size={24} />
-        <Text style={styles.formTitle}>Registo de Sensor IoT</Text>
-      </View>
-      
-      <TextInput style={styles.input} placeholder="Identificador (Ex: Câmara de Carnes)" value={form.nome} onChangeText={(t) => setForm({...form, nome: t})} />
-      <TextInput style={styles.input} placeholder="Filial (Ex: Loja Porto)" value={form.filial} onChangeText={(t) => setForm({...form, filial: t})} />
-      <TextInput style={styles.input} placeholder="Setor (Ex: Açougue, Farmácia)" value={form.setor} onChangeText={(t) => setForm({...form, setor: t})} />
-      <TextInput style={styles.input} placeholder="Tipo (Ex: Câmara Frigorífica)" value={form.tipo} onChangeText={(t) => setForm({...form, tipo: t})} />
-      
-      <View style={styles.row}>
-        <TextInput style={[styles.input, styles.halfInput]} placeholder="Temp Min (°C)" keyboardType="numeric" value={form.temp_min} onChangeText={(t) => setForm({...form, temp_min: t})} />
-        <TextInput style={[styles.input, styles.halfInput]} placeholder="Temp Max (°C)" keyboardType="numeric" value={form.temp_max} onChangeText={(t) => setForm({...form, temp_max: t})} />
-      </View>
-
-      <TouchableOpacity style={styles.btnSalvar} onPress={salvarEquipamento} disabled={loading}>
-        {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnSalvarText}>Adicionar Máquina</Text>}
-      </TouchableOpacity>
-      
-      <Text style={styles.listTitle}>
-        Parque Instalado: {filialAtiva === 'Todas' ? 'Visão Global' : filialAtiva}
-      </Text>
-    </View>
-  );
-
-  const renderItem = ({ item }) => {
-    const diasCalib = item.data_calibracao ? Math.floor((Date.now() - new Date(item.data_calibracao).getTime()) / (1000 * 60 * 60 * 24)) : 0;
-    const calibCritica = diasCalib > 365;
-
-    return (
-      <View style={styles.card}>
-        <View style={styles.cardInfo}>
-          <Text style={styles.equipNome}>{item.nome}</Text>
-          <Text style={styles.equipDetalhes}>{item.filial} | {item.tipo}</Text>
-          
-          <View style={styles.calibRow}>
-            {calibCritica ? <AlertTriangle size={16} color={theme.danger} /> : <ClipboardCheck size={16} color={theme.success} />}
-            <Text style={[styles.calibText, { color: calibCritica ? theme.danger : theme.success }]}>
-              Certificado há {diasCalib} dias
-            </Text>
-          </View>
-          
-          <Text style={styles.limites}>
-            Limites: {item.temp_min}°C a {item.temp_max}°C
-          </Text>
-        </View>
-
-        <TouchableOpacity style={styles.btnDelete} onPress={() => deletarEquipamento(item.id, item.nome)}>
-          <Trash2 color={theme.danger} size={20} />
-        </TouchableOpacity>
-      </View>
-    );
-  };
+  const filtrados = filialAtiva === 'Todas' ? equipamentos : equipamentos.filter(eq => eq.filial === filialAtiva);
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.bg }]}>
+      <View style={styles.headerArea}>
+        <Text style={[styles.listTitle, { color: theme.textMain }]}>Metrologia & Instalações ({filtrados.length})</Text>
+        <TouchableOpacity style={[styles.btnNovo, { backgroundColor: theme.primary }]} onPress={() => { setForm(formInicial); setEditMode(false); setModalVisible(true); }}>
+          <PlusCircle color="#fff" size={20} /><Text style={styles.btnText}> Novo</Text>
+        </TouchableOpacity>
+      </View>
+
       <FlatList
-        data={equipamentosFiltrados} // Renderiza a lista já filtrada
+        data={filtrados}
         keyExtractor={(item) => item.id.toString()}
-        renderItem={renderItem}
-        ListHeaderComponent={renderFormulario}
-        contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
-        ListEmptyComponent={<Text style={{textAlign: 'center', color: theme.textMuted}}>Nenhum equipamento para exibir nesta loja.</Text>}
+        renderItem={({ item }) => <EquipamentoCard item={item} onDelete={(id) => api.delete(`/equipamentos/${id}`).then(carregarDados)} onEdit={(i) => { setForm({...i, data_calibracao: i.data_calibracao.split('T')[0]}); setEditMode(true); setModalVisible(true); }} theme={theme} />}
+        contentContainerStyle={{ padding: 16 }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); carregarDados(); }} colors={[theme.primary]} />}
       />
+
+      <Modal visible={modalVisible} animationType="slide" transparent={true}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: theme.card }]}>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <View style={styles.modalHeader}>
+                <Text style={[styles.formTitle, { color: theme.textMain }]}>{editMode ? 'Editar Ativo' : 'Novo Sensor IoT'}</Text>
+                <TouchableOpacity onPress={aplicarNormaANVISA} style={styles.btnNorma}><ShieldCheck size={22} color={theme.info} /></TouchableOpacity>
+              </View>
+
+              <Text style={styles.label}>NOME E LOCALIZAÇÃO</Text>
+              <TextInput style={[styles.input, { borderColor: theme.border, color: theme.textMain }]} placeholder="Identificador" value={form.nome} onChangeText={(t) => setForm({...form, nome: t})} />
+              
+              <Text style={styles.label}>SELECIONAR LOJA (DINÂMICO)</Text>
+              <View style={styles.chipRow}>
+                {lojasExistentes.map(l => (
+                  <TouchableOpacity key={l} onPress={() => setForm({...form, filial: l})} style={[styles.chip, { borderColor: theme.border }, form.filial === l && { backgroundColor: theme.primary }]}>
+                    <Text style={{ color: form.filial === l ? '#fff' : theme.textMuted, fontSize: 10 }}>{l}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={styles.label}>SETOR E TIPO</Text>
+              <View style={styles.chipRow}>{setores.map(s => <TouchableOpacity key={s} onPress={() => setForm({...form, setor: s})} style={[styles.chip, { borderColor: theme.border }, form.setor === s && { backgroundColor: theme.primary }]}><Text style={{ color: form.setor === s ? '#fff' : theme.textMuted, fontSize: 10 }}>{s}</Text></TouchableOpacity>)}</View>
+              <View style={styles.chipRow}>{tipos.map(t => <TouchableOpacity key={t} onPress={() => setForm({...form, tipo: t})} style={[styles.chip, { borderColor: theme.border }, form.tipo === t && { backgroundColor: theme.info }]}><Text style={{ color: form.tipo === t ? '#fff' : theme.textMuted, fontSize: 10 }}>{t}</Text></TouchableOpacity>)}</View>
+
+              <Text style={styles.label}>METROLOGIA / SLA / DEGELO</Text>
+              <TextInput style={[styles.input, { borderColor: theme.border, color: theme.textMain }]} placeholder="Data Calibração (AAAA-MM-DD)" value={form.data_calibracao} onChangeText={(t) => setForm({...form, data_calibracao: t})} />
+              <View style={styles.row}>
+                <TextInput style={[styles.input, styles.half]} placeholder="Mín °C" value={String(form.temp_min)} onChangeText={(t) => setForm({...form, temp_min: t})} keyboardType="numeric" />
+                <TextInput style={[styles.input, styles.half]} placeholder="Máx °C" value={String(form.temp_max)} onChangeText={(t) => setForm({...form, temp_max: t})} keyboardType="numeric" />
+              </View>
+              <View style={styles.row}>
+                <TextInput style={[styles.input, styles.half]} placeholder="UR% Mín" value={String(form.umidade_min || '')} onChangeText={(t) => setForm({...form, umidade_min: t})} keyboardType="numeric" />
+                <TextInput style={[styles.input, styles.half]} placeholder="UR% Máx" value={String(form.umidade_max || '')} onChangeText={(t) => setForm({...form, umidade_max: t})} keyboardType="numeric" />
+              </View>
+              <View style={styles.row}>
+                <TextInput style={[styles.input, styles.half]} placeholder="Intervalo Degelo (h)" value={String(form.intervalo_degelo)} onChangeText={(t) => setForm({...form, intervalo_degelo: t})} keyboardType="numeric" />
+                <TextInput style={[styles.input, styles.half]} placeholder="Duração Degelo (m)" value={String(form.duracao_degelo)} onChangeText={(t) => setForm({...form, duracao_degelo: t})} keyboardType="numeric" />
+              </View>
+            </ScrollView>
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={styles.btnCancel} onPress={() => setModalVisible(false)}><X color={theme.textMuted} size={24} /></TouchableOpacity>
+              <TouchableOpacity style={[styles.btnSave, { backgroundColor: theme.primary }]} onPress={salvarEquipamento}><Save color="#fff" size={24} /></TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: theme.bg },
-  formContainer: { backgroundColor: theme.card, padding: 20, borderRadius: 12, marginBottom: 20, elevation: 2 },
-  formHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 15 },
-  formTitle: { fontSize: 18, fontWeight: 'bold', color: theme.textMain, marginLeft: 10 },
-  input: { borderWidth: 1, borderColor: theme.border, borderRadius: 8, padding: 12, marginBottom: 12, backgroundColor: theme.bg, color: theme.textMain },
-  row: { flexDirection: 'row', justifyContent: 'space-between' },
-  halfInput: { width: '48%' },
-  btnSalvar: { backgroundColor: theme.primary, padding: 15, borderRadius: 8, alignItems: 'center', marginTop: 5, marginBottom: 10 },
-  btnSalvarText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
-  listTitle: { fontSize: 18, fontWeight: 'bold', color: theme.textMain, marginTop: 20, marginBottom: 10 },
-  card: { backgroundColor: theme.card, padding: 15, borderRadius: 12, marginBottom: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderWidth: 1, borderColor: theme.border, elevation: 1 },
+  container: { flex: 1 },
+  headerArea: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20 },
+  listTitle: { fontSize: 16, fontWeight: '800' },
+  btnNovo: { flexDirection: 'row', padding: 10, borderRadius: 8, alignItems: 'center' },
+  btnText: { color: '#fff', fontWeight: 'bold' },
+  card: { padding: 16, borderRadius: 16, marginBottom: 12, flexDirection: 'row', borderWidth: 1, elevation: 2 },
   cardInfo: { flex: 1 },
-  equipNome: { fontSize: 16, fontWeight: 'bold', color: theme.textMain },
-  equipDetalhes: { fontSize: 12, color: theme.textMuted, marginBottom: 8 },
-  calibRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
-  calibText: { fontSize: 12, fontWeight: 'bold', marginLeft: 5 },
-  limites: { fontSize: 12, color: theme.textMuted },
-  btnDelete: { padding: 10, backgroundColor: '#fee2e2', borderRadius: 8 },
+  badgeRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+  statusDot: { width: 8, height: 8, borderRadius: 4, marginRight: 8 },
+  badgeFilial: { fontSize: 9, fontWeight: '900', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, marginRight: 6 },
+  badgeSetor: { fontSize: 9, fontWeight: '800', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
+  equipNome: { fontSize: 17, fontWeight: '800' },
+  subText: { fontSize: 12, marginBottom: 5 },
+  divider: { height: 1, backgroundColor: 'rgba(0,0,0,0.05)', marginVertical: 10 },
+  metrologiaGrid: { flexDirection: 'row', justifyContent: 'space-between' },
+  metrologiaItem: { flex: 1 },
+  labelRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
+  metrologiaLabel: { fontSize: 9, fontWeight: '900' },
+  metrologiaValue: { fontSize: 14, fontWeight: '700' },
+  actionColumn: { justifyContent: 'center', paddingLeft: 10 },
+  btnAction: { padding: 10, backgroundColor: '#f8fafc', borderRadius: 10 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalContent: { padding: 25, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '90%' },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20, alignItems: 'center' },
+  formTitle: { fontSize: 20, fontWeight: 'bold' },
+  btnNorma: { padding: 8, backgroundColor: 'rgba(56, 189, 248, 0.1)', borderRadius: 10 },
+  input: { borderWidth: 1, borderRadius: 10, padding: 12, marginBottom: 12 },
+  row: { flexDirection: 'row', justifyContent: 'space-between' },
+  half: { width: '48%' },
+  label: { fontSize: 10, fontWeight: 'bold', marginBottom: 10, marginTop: 10, letterSpacing: 1 },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 10, gap: 5 },
+  chip: { padding: 8, borderRadius: 15, borderWidth: 1 },
+  modalActions: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 20 },
+  btnSave: { padding: 15, borderRadius: 12, flex: 1, marginLeft: 10, alignItems: 'center' },
+  btnCancel: { padding: 15, borderRadius: 12, borderWidth: 1, borderColor: '#ccc' }
 });
