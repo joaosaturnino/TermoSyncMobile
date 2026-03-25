@@ -3,6 +3,7 @@ import {
   Clock,
   Droplets,
   Filter,
+  Power,
   Wifi
 } from 'lucide-react-native';
 import React, { useCallback, useContext, useEffect, useState } from 'react';
@@ -17,39 +18,69 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
-import { api } from '../api/api';
+import { api, getSocket } from '../api/api';
 import { AppContext } from '../context/AppContext';
 
 const { width } = Dimensions.get('window');
 
-/**
- * SensorCard Humidade: Fiel ao layout Web para Higrometria
- * Cores baseadas no token --info (#38bdf8) do App.css
- */
-const SensorCard = React.memo(({ eq, theme }) => {
-  const valor = eq.ultima_umidade;
-  const min = parseFloat(eq.umidade_min || 40);
-  const max = parseFloat(eq.umidade_max || 80);
+const SensorCard = React.memo(({ eq, theme, isTemp }) => {
+  const valor = isTemp ? eq.ultima_temp : eq.ultima_umidade;
+  const min = parseFloat(isTemp ? eq.temp_min : (eq.umidade_min || 40));
+  const max = parseFloat(isTemp ? eq.temp_max : (eq.umidade_max || 80));
   
-  // Lógica de Alerta Higrométrico idêntica ao server.js
   const isAlta = valor > max;
   const isBaixa = valor < min;
-  const isAnomalia = (isAlta || isBaixa) && !eq.em_degelo;
-  
-  // Cálculo da barra de humidade (normalizado entre 5% e 100%)
+
+  let isAnomalia = false;
+  let statusColor = '';
+  let statusText = '';
+  let subStatusText = '';
+
+  if (isTemp) {
+    isAnomalia = (isAlta || isBaixa) && !eq.em_degelo;
+    const motorLigado = eq.motor_ligado;
+    const emDegelo = eq.em_degelo;
+
+    if (emDegelo) {
+      statusColor = '#38bdf8'; 
+      statusText = 'DEGELO';
+      subStatusText = 'Ciclo de Degelo Automático';
+    } else if (!motorLigado) {
+      statusColor = '#f97316'; 
+      statusText = 'PARADO';
+      subStatusText = 'Aviso: Motor Desligado';
+    } else if (isAnomalia) {
+      statusColor = '#ef4444'; 
+      statusText = 'LIGADO';
+      subStatusText = 'Excursão Térmica Registada';
+    } else {
+      statusColor = '#10b981'; 
+      statusText = 'LIGADO';
+      subStatusText = 'Temperatura Estável';
+    }
+  } else {
+    isAnomalia = isAlta || isBaixa;
+    
+    if (isAnomalia) {
+      statusColor = '#f59e0b'; 
+      statusText = isAlta ? 'HÚMIDO' : 'SECO';
+      subStatusText = 'Ambiente Desregulado (HACCP)';
+    } else {
+      statusColor = '#38bdf8'; 
+      statusText = 'ESTÁVEL';
+      subStatusText = 'Higrometria Estável';
+    }
+  }
+
   let percent = ((valor - min) / (max - min)) * 100;
   percent = Math.min(Math.max(percent, 5), 100);
-
-  // No modo Humidade, a cor padrão é o Azul Info (#38bdf8)
-  const statusColor = isAnomalia ? '#f59e0b' : '#38bdf8'; 
 
   return (
     <View style={[
       styles.card, 
-      { backgroundColor: theme.card, borderColor: isAnomalia ? '#f59e0b' : theme.border },
-      isAnomalia && styles.cardWarningBorder
+      { backgroundColor: theme.card, borderColor: isAnomalia ? statusColor : theme.border },
+      isAnomalia && { borderLeftWidth: 8, borderLeftColor: statusColor }
     ]}>
-      
       <View style={styles.cardHeader}>
         <View style={{ flex: 1 }}>
           <Text style={[styles.badgeSetor, { backgroundColor: theme.bg, color: theme.textMuted }]}>
@@ -62,25 +93,20 @@ const SensorCard = React.memo(({ eq, theme }) => {
       <View style={[styles.statusBox, { backgroundColor: statusColor }]}>
         <View style={styles.statusInfo}>
           <View style={styles.statusRow}>
-            <Droplets color="#fff" size={16} />
-            <Text style={styles.statusText}>
-              {isAlta ? 'HUMIDADE CRÍTICA' : (isBaixa ? 'AR SECO' : 'HIGROMETRIA OK')}
-            </Text>
+            {isTemp ? <Power color="#fff" size={16} /> : <Droplets color="#fff" size={16} />}
+            <Text style={styles.statusText}>{statusText}</Text>
           </View>
-          
           <Text style={styles.limitesText}>
-            ALVO: {min}% a {max}% UR
+            ALVO: {min}{isTemp ? '°C' : '%'} a {max}{isTemp ? '°C' : '%'}
           </Text>
-          
-          <View style={styles.thermalBarBg}>
+          <View style={[styles.thermalBarBg, { backgroundColor: isTemp ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.25)' }]}>
             <View style={[styles.thermalBarFill, { width: `${percent}%`, backgroundColor: '#fff' }]} />
           </View>
         </View>
-
-        <View style={styles.tempDisplay}>
-          <Text style={styles.sensorLabel}>Humidade</Text>
+        <View style={[styles.tempDisplay, { borderLeftColor: isTemp ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.2)' }]}>
+          <Text style={styles.sensorLabel}>Sensor</Text>
           <Text style={styles.sensorValue}>
-            {valor !== null ? `${valor}%` : '--'}
+            {valor !== null ? `${valor}${isTemp ? '°' : '%'}` : '--'}
           </Text>
         </View>
       </View>
@@ -88,12 +114,12 @@ const SensorCard = React.memo(({ eq, theme }) => {
       <View style={styles.cardFooter}>
         <View style={styles.footerItem}>
           <Clock size={12} color={theme.textMuted} />
-          <Text style={[styles.footerText, { color: theme.textMuted }]}> Sensor DHT22</Text>
+          <Text style={[styles.footerText, { color: theme.textMuted }]}> Atualização Real-Time</Text>
         </View>
         <View style={styles.footerItem}>
-          <Activity size={12} color={isAnomalia ? '#f59e0b' : '#10b981'} />
+          <Activity size={12} color={isAnomalia ? statusColor : '#10b981'} />
           <Text style={[styles.footerText, { color: theme.textMuted }]}>
-            {isAnomalia ? ' Fora do Padrão' : ' Estável'}
+            {` ${subStatusText}`}
           </Text>
         </View>
       </View>
@@ -101,7 +127,7 @@ const SensorCard = React.memo(({ eq, theme }) => {
   );
 });
 
-export default function MonitorizacaoHumidade() {
+export default function SensoresScreen({ isTemp }) {
   const { filialAtiva, theme } = useContext(AppContext);
   const [equipamentos, setEquipamentos] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
@@ -123,8 +149,20 @@ export default function MonitorizacaoHumidade() {
 
   useEffect(() => {
     carregarDados();
-    const interval = setInterval(carregarDados, 5000); 
-    return () => clearInterval(interval);
+    
+    const socket = getSocket();
+    
+    socket.on('nova_leitura', (dadosNovaLeitura) => {
+      setEquipamentos(prev => prev.map(eq => 
+        eq.id === dadosNovaLeitura.equipamento_id 
+          ? { ...eq, ultima_temp: dadosNovaLeitura.temperatura, ultima_umidade: dadosNovaLeitura.umidade } 
+          : eq
+      ));
+    });
+
+    socket.on('atualizacao_dados', () => carregarDados());
+
+    return () => socket.disconnect();
   }, [carregarDados]);
 
   const onRefresh = async () => {
@@ -133,29 +171,33 @@ export default function MonitorizacaoHumidade() {
     setRefreshing(false);
   };
 
-  // Filtro fiel à Web: Filial + Setor + Apenas quem tem sensor de humidade
   const filtrados = equipamentos.filter(eq => {
-    const temSensorHum = eq.umidade_max !== null; 
+    if (!isTemp && eq.umidade_max === null) return false;
+    
     const matchFilial = filialAtiva === 'Todas' || eq.filial === filialAtiva;
     const matchSetor = setorSelecionado === 'Todos' || eq.setor === setorSelecionado;
-    return temSensorHum && matchFilial && matchSetor;
+    return matchFilial && matchSetor;
   });
+
+  // 🚀 OTIMIZAÇÃO CRÍTICA: Isolar o renderItem da FlatList para não quebrar o React.memo
+  const renderItem = useCallback(({ item }) => (
+    <SensorCard eq={item} theme={theme} isTemp={isTemp} />
+  ), [theme, isTemp]);
 
   if (loading) {
     return (
       <View style={[styles.container, { backgroundColor: theme.bg, justifyContent: 'center' }]}>
-        <ActivityIndicator size="large" color="#38bdf8" />
+        <ActivityIndicator size="large" color={isTemp ? theme.primary : theme.info} />
       </View>
     );
   }
 
   return (
     <View style={[styles.container, { backgroundColor: theme.bg }]}>
-      {/* Seletor de Setor - Cópia da Web */}
       <View style={[styles.filterContainer, { borderBottomColor: theme.border }]}>
         <View style={styles.filterHeader}>
-          <Filter size={16} color="#38bdf8" />
-          <Text style={[styles.filterLabel, { color: theme.textMain }]}>Setores Higrométricos</Text>
+          <Filter size={16} color={isTemp ? theme.primary : theme.info} />
+          <Text style={[styles.filterLabel, { color: theme.textMain }]}>Setores {isTemp ? 'Térmicos' : 'Higrométricos'}</Text>
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipScroll}>
           {setoresDisponiveis.map((setor) => (
@@ -165,7 +207,7 @@ export default function MonitorizacaoHumidade() {
               style={[
                 styles.chip, 
                 { backgroundColor: theme.card, borderColor: theme.border },
-                setorSelecionado === setor && { backgroundColor: '#38bdf8', borderColor: '#38bdf8' }
+                setorSelecionado === setor && { backgroundColor: isTemp ? theme.primary : theme.info, borderColor: isTemp ? theme.primary : theme.info }
               ]}
             >
               <Text style={[
@@ -183,15 +225,23 @@ export default function MonitorizacaoHumidade() {
       <FlatList
         data={filtrados}
         keyExtractor={(item) => String(item.id)}
-        renderItem={({ item }) => <SensorCard eq={item} theme={theme} />}
+        renderItem={renderItem}  // 🚀 Utiliza a função protegida pelo useCallback
         contentContainerStyle={styles.listContent}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#38bdf8']} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[isTemp ? theme.primary : theme.info]} />}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Wifi size={48} color={theme.border} />
-            <Text style={{ color: theme.textMuted, marginTop: 10 }}>Nenhum sensor de humidade nesta unidade.</Text>
+            <Text style={{ color: theme.textMuted, marginTop: 10 }}>
+              {isTemp ? 'Nenhum equipamento térmico localizado.' : 'Nenhum sensor de humidade localizado.'}
+            </Text>
           </View>
         }
+        // 🚀 PROPS DE OTIMIZAÇÃO DE MEMÓRIA PARA WEBSOCKETS RÁPIDOS
+        initialNumToRender={8}
+        maxToRenderPerBatch={8}
+        windowSize={5}
+        removeClippedSubviews={true}
+        updateCellsBatchingPeriod={50}
       />
     </View>
   );
@@ -207,18 +257,17 @@ const styles = StyleSheet.create({
   chipText: { fontSize: 12, fontWeight: '700' },
   listContent: { padding: 16, paddingBottom: 40 },
   card: { borderRadius: 16, padding: 16, marginBottom: 16, borderWidth: 1, elevation: 4 },
-  cardWarningBorder: { borderLeftWidth: 8, borderLeftColor: '#f59e0b' },
   cardHeader: { marginBottom: 12 },
   cardTitle: { fontSize: 18, fontWeight: '800', marginTop: 4 },
   badgeSetor: { alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, fontSize: 10, fontWeight: '900' },
   statusBox: { flexDirection: 'row', borderRadius: 12, padding: 15, alignItems: 'center' },
   statusInfo: { flex: 1 },
   statusRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
-  statusText: { color: '#fff', fontWeight: 'bold', marginLeft: 6, fontSize: 11 },
+  statusText: { color: '#fff', fontWeight: 'bold', marginLeft: 6, fontSize: 11, letterSpacing: 1 },
   limitesText: { color: 'rgba(255,255,255,0.9)', fontSize: 12, fontWeight: '700', marginBottom: 12 },
-  thermalBarBg: { height: 10, backgroundColor: 'rgba(255,255,255,0.25)', borderRadius: 5, overflow: 'hidden' },
+  thermalBarBg: { height: 10, borderRadius: 5, overflow: 'hidden' },
   thermalBarFill: { height: '100%', borderRadius: 5 },
-  tempDisplay: { paddingLeft: 15, alignItems: 'center', borderLeftWidth: 1, borderLeftColor: 'rgba(255,255,255,0.2)', minWidth: 90 },
+  tempDisplay: { paddingLeft: 15, alignItems: 'center', borderLeftWidth: 1, minWidth: 90 },
   sensorLabel: { color: '#fff', fontSize: 10, fontWeight: '700', textTransform: 'uppercase' },
   sensorValue: { color: '#fff', fontSize: 28, fontWeight: '900' },
   cardFooter: { flexDirection: 'row', marginTop: 12, borderTopWidth: 1, borderTopColor: 'rgba(0,0,0,0.05)', paddingTop: 8, justifyContent: 'space-between' },

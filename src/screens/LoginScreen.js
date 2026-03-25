@@ -1,36 +1,39 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Activity } from 'lucide-react-native';
-import { useState } from 'react';
+import { useContext, useState } from 'react';
 import { Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { api, theme } from '../api/api';
+import { api } from '../api/api';
+import { AppContext } from '../context/AppContext';
 
 export default function LoginScreen({ onLogin }) {
+  const { theme } = useContext(AppContext);
   const [usuario, setUsuario] = useState('');
   const [senha, setSenha] = useState('');
   const [loading, setLoading] = useState(false);
 
   const fazerLogin = async () => {
-    if (!usuario || !senha) return Alert.alert('Erro', 'Preencha os campos');
+    if (!usuario || !senha) return Alert.alert('Aviso', 'Preencha todos os campos.');
     setLoading(true);
+    
     try {
       const res = await api.post('/login', { usuario, senha });
+      
+      // Guarda os dados
       await AsyncStorage.setItem('token', res.data.token);
       await AsyncStorage.setItem('userRole', res.data.role);
       await AsyncStorage.setItem('userFilial', res.data.filial);
-      api.defaults.headers.common['Authorization'] = `Bearer ${res.data.token}`;
+      
+      // Passa para a próxima tela
       onLogin(res.data);
+      
     } catch (error) {
-      // Aqui está o truque para saber o erro real:
       if (error.response) {
-        // O servidor respondeu (Erro 401 - Senha errada mesmo)
-        Alert.alert('Falha no Login', error.response.data.error || 'Credenciais incorretas.');
+        Alert.alert('Falha na Autenticação', error.response.data.error || 'Credenciais incorretas.');
       } else {
-        // O servidor nem sequer foi encontrado (Erro de Rede / IP errado)
         Alert.alert(
           'Servidor Inacessível', 
-          'Não foi possível conectar ao backend. Verifique se o IP em api.js está correto e se o PC e o Telemóvel estão no mesmo Wi-Fi.'
+          'Não foi possível ligar ao backend. Verifica se o IP em api.js está correto e se o PC e o telemóvel estão na mesma rede Wi-Fi.'
         );
-        console.log('Erro detalhado:', error.message);
       }
     } finally {
       setLoading(false);
@@ -38,34 +41,36 @@ export default function LoginScreen({ onLogin }) {
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.box}>
+    <View style={[styles.container, { backgroundColor: theme.primary }]}>
+      <View style={[styles.box, { backgroundColor: theme.card }]}>
         <View style={styles.logoContainer}>
           <Activity color={theme.primary} size={48} />
         </View>
-        <Text style={styles.title}>TermoSync</Text>
-        <Text style={styles.subtitle}>Corporate Platform ESG</Text>
+        <Text style={[styles.title, { color: theme.primary }]}>TermoSync</Text>
+        <Text style={[styles.subtitle, { color: theme.textMuted }]}>Corporate Platform ESG</Text>
 
-        <Text style={styles.label}>Credencial / Loja</Text>
+        <Text style={[styles.label, { color: theme.textMain }]}>Credencial / Loja</Text>
         <TextInput 
-          style={styles.input} 
+          style={[styles.input, { borderColor: theme.border, backgroundColor: theme.bg, color: theme.textMain }]} 
           placeholder="admin ou gestor_porto"
+          placeholderTextColor={theme.textMuted}
           value={usuario} 
           onChangeText={setUsuario} 
           autoCapitalize="none"
         />
 
-        <Text style={styles.label}>Palavra-passe</Text>
+        <Text style={[styles.label, { color: theme.textMain }]}>Palavra-passe</Text>
         <TextInput 
-          style={styles.input} 
+          style={[styles.input, { borderColor: theme.border, backgroundColor: theme.bg, color: theme.textMain }]} 
           placeholder="••••••••"
+          placeholderTextColor={theme.textMuted}
           secureTextEntry
           value={senha} 
           onChangeText={setSenha} 
         />
 
-        <TouchableOpacity style={styles.btn} onPress={fazerLogin} disabled={loading}>
-          <Text style={styles.btnText}>{loading ? 'Autenticando...' : 'Autenticar'}</Text>
+        <TouchableOpacity style={[styles.btn, { backgroundColor: theme.primary }]} onPress={fazerLogin} disabled={loading}>
+          <Text style={styles.btnText}>{loading ? 'A Autenticar...' : 'Autenticar'}</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -73,13 +78,13 @@ export default function LoginScreen({ onLogin }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: theme.primary, justifyContent: 'center', padding: 20 },
-  box: { backgroundColor: theme.card, padding: 30, borderRadius: 16, alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 10, elevation: 5 },
+  container: { flex: 1, justifyContent: 'center', padding: 20 },
+  box: { padding: 30, borderRadius: 16, alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 10, elevation: 5 },
   logoContainer: { backgroundColor: '#f0fdf4', padding: 15, borderRadius: 50, marginBottom: 10 },
-  title: { fontSize: 28, fontWeight: 'bold', color: theme.primary, marginBottom: 5 },
-  subtitle: { fontSize: 14, color: theme.textMuted, marginBottom: 30 },
-  label: { alignSelf: 'flex-start', fontSize: 12, fontWeight: 'bold', color: theme.textMain, marginBottom: 5 },
-  input: { width: '100%', borderWidth: 1, borderColor: theme.border, borderRadius: 8, padding: 12, marginBottom: 15, backgroundColor: theme.bg },
-  btn: { backgroundColor: theme.primary, width: '100%', padding: 15, borderRadius: 8, alignItems: 'center', marginTop: 10 },
+  title: { fontSize: 28, fontWeight: 'bold', marginBottom: 5 },
+  subtitle: { fontSize: 14, marginBottom: 30 },
+  label: { alignSelf: 'flex-start', fontSize: 12, fontWeight: 'bold', marginBottom: 5 },
+  input: { width: '100%', borderWidth: 1, borderRadius: 8, padding: 12, marginBottom: 15 },
+  btn: { width: '100%', padding: 15, borderRadius: 8, alignItems: 'center', marginTop: 10 },
   btnText: { color: '#fff', fontWeight: 'bold', fontSize: 16 }
 });

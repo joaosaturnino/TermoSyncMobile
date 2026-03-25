@@ -12,14 +12,14 @@ export default function CustomDrawer(props) {
     <View style={{ flex: 1, backgroundColor: theme.bg }}>
       <DrawerContentScrollView {...props} contentContainerStyle={{ backgroundColor: theme.bg }}>
         
-        {/* CABEÇALHO DO DRAWER */}
         <View style={[styles.header, { borderBottomColor: theme.border }]}>
           <View style={styles.logoRow}>
-            <View style={{ backgroundColor: '#f0fdf4', padding: 5, borderRadius: 8 }}><Activity color={theme.primary} size={24} /></View>
+            <View style={{ backgroundColor: '#f0fdf4', padding: 5, borderRadius: 8 }}>
+              <Activity color={theme.primary} size={24} />
+            </View>
             <Text style={[styles.title, { color: theme.primary }]}>TermoSync</Text>
           </View>
 
-          {/* FILTRO RBAC (Controlo de Acesso) */}
           <View style={styles.rbacContainer}>
             <View style={styles.rbacHeader}>
               {userRole === 'ADMIN' ? <MapPin size={14} color={theme.primary} /> : <UserCheck size={14} color={theme.primary} />}
@@ -47,19 +47,18 @@ export default function CustomDrawer(props) {
           </View>
         </View>
 
-        {/* LISTA DE PÁGINAS (Gerada automaticamente pelo DrawerNavigator) */}
         <View style={{ flex: 1, paddingTop: 10 }}>
           <DrawerItemList {...props} />
         </View>
       </DrawerContentScrollView>
 
-      {/* RODAPÉ DO DRAWER (Tema e Sair) */}
       <View style={[styles.footer, { borderTopColor: theme.border, backgroundColor: theme.card }]}>
         <TouchableOpacity style={styles.footerBtn} onPress={toggleTheme}>
           {isDarkMode ? <Sun size={20} color={theme.warning} /> : <Moon size={20} color={theme.textMuted} />}
           <Text style={[styles.footerText, { color: theme.textMain }]}>{isDarkMode ? 'Modo Claro' : 'Modo Escuro'}</Text>
         </TouchableOpacity>
 
+        {/* Chama a função logout injetada pelo contexto, que avisa o App.js para voltar ao Login */}
         <TouchableOpacity style={styles.footerBtn} onPress={logout}>
           <LogOut size={20} color={theme.danger} />
           <Text style={[styles.footerText, { color: theme.danger }]}>Encerrar Sessão</Text>

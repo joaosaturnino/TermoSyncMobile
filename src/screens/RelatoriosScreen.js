@@ -10,11 +10,9 @@ import {
   TouchableOpacity, View
 } from 'react-native';
 import { AreaChart, Grid, LineChart, YAxis } from 'react-native-svg-charts';
-import { io } from 'socket.io-client'; // Certifique-se que esta lib está instalada
-import { api, SOCKET_URL } from '../api/api';
+import { api, getSocket } from '../api/api';
 import { AppContext } from '../context/AppContext';
 
-// Constantes ESG sincronizadas
 const CUSTO_KWH_REAIS = 0.72; 
 const FATOR_EMISSAO_CO2 = 0.25; 
 
@@ -27,7 +25,6 @@ export default function SustentabilidadeScreen() {
   const [mostrarTabelaBruta, setMostrarTabelaBruta] = useState(false);
   const [equipamentoFiltro, setEquipamentoFiltro] = useState('');
 
-  // 1. CARREGAMENTO INICIAL
   const carregarDados = useCallback(async () => {
     try {
       const [resRel, resEq] = await Promise.all([
@@ -42,34 +39,28 @@ export default function SustentabilidadeScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [api]);
+  }, []);
 
-  // 2. SINCRONIZAÇÃO EM TEMPO REAL (SOCKET.IO)
   useEffect(() => {
     carregarDados();
 
-    const socket = io(SOCKET_URL);
+    const socket = getSocket();
 
-    // Escuta novas telemetrias vindas do server.js
     socket.on('nova_leitura', (dadosNovaLeitura) => {
-      // Filtro de segurança por filial idêntico à Web
       if (userRole === 'LOJA' && dadosNovaLeitura.filial !== userFilial) return;
 
       setRelatorios(prev => {
         const novosDados = [...prev, dadosNovaLeitura];
-        // Mantém o limite de cache para performance
         if (novosDados.length > 15000) novosDados.shift();
         return novosDados;
       });
     });
 
-    // Escuta atualizações de hardware (edições no inventário)
     socket.on('atualizacao_dados', () => carregarDados());
 
     return () => socket.disconnect();
   }, [carregarDados, userRole, userFilial]);
 
-  // 3. CÁLCULOS TÉCNICOS
   const stats = useMemo(() => {
     const filtrados = relatorios.filter(r => {
       const matchFilial = filialAtiva === 'Todas' || r.filial === filialAtiva;
@@ -92,7 +83,6 @@ export default function SustentabilidadeScreen() {
 
     const total = filtrados.length || 1;
     
-    // Cálculo MKT logarítmico (Fidelidade total à Web)
     let somaExp = 0;
     filtrados.forEach(d => {
       const t = parseFloat(d.temperatura);
@@ -101,6 +91,18 @@ export default function SustentabilidadeScreen() {
     const mkt = filtrados.length > 0 
       ? ((83.144 / 0.0083144) / (-Math.log(somaExp / filtrados.length)) - 273.15).toFixed(2)
       : '--';
+
+    // DOWNSAMPLING PARA O GRÁFICO (Otimização fundamental de memória)
+    const arrGrafico = filtrados.map(f => parseFloat(f.temperatura));
+    const arrEnergia = filtrados.map(f => parseFloat(f.consumo_kwh || 0));
+
+    const dadosGraficoFiltrados = arrGrafico.length <= 200 
+      ? arrGrafico 
+      : arrGrafico.filter((_, idx) => idx % Math.ceil(arrGrafico.length / 200) === 0);
+
+    const dadosEnergiaFiltrados = arrEnergia.length <= 200 
+      ? arrEnergia 
+      : arrEnergia.filter((_, idx) => idx % Math.ceil(arrEnergia.length / 200) === 0);
 
     return {
       totalEnergia: somaKwh,
@@ -111,8 +113,8 @@ export default function SustentabilidadeScreen() {
       minTemp: tMin === Infinity ? '--' : tMin.toFixed(1),
       maxTemp: tMax === -Infinity ? '--' : tMax.toFixed(1),
       mktValue: mkt,
-      dadosGrafico: filtrados.map(f => parseFloat(f.temperatura)),
-      dadosEnergia: filtrados.map(f => parseFloat(f.consumo_kwh || 0)),
+      dadosGrafico: dadosGraficoFiltrados, // ARRAY LEVE
+      dadosEnergia: dadosEnergiaFiltrados, // ARRAY LEVE
       dadosBrutos: [...filtrados].reverse().slice(0, 50)
     };
   }, [relatorios, equipamentos, filialAtiva, equipamentoFiltro]);
@@ -135,7 +137,6 @@ export default function SustentabilidadeScreen() {
         <Text style={[styles.title, { color: theme.textMain }]}>Inteligência e Sustentabilidade</Text>
       </View>
 
-      {/* KPI CARDS */}
       <View style={styles.kpiRow}>
         <View style={[styles.kpiCard, { borderLeftColor: '#10b981', backgroundColor: theme.card }]}>
           <Leaf size={16} color="#10b981" />
@@ -149,7 +150,6 @@ export default function SustentabilidadeScreen() {
         </View>
       </View>
 
-      {/* COMPLIANCE E MKT */}
       <View style={[styles.auditCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
         <View style={styles.auditHeader}>
           <Percent size={18} color={theme.primary} />
@@ -172,7 +172,6 @@ export default function SustentabilidadeScreen() {
         </View>
       </View>
 
-      {/* GRÁFICO REAL-TIME */}
       <View style={[styles.chartWrapper, { backgroundColor: theme.card, borderColor: theme.border }]}>
         <Text style={[styles.chartTitle, { color: theme.textMain }]}>Tendência Térmica vs Consumo</Text>
         <View style={{ height: 180, flexDirection: 'row' }}>
@@ -184,7 +183,6 @@ export default function SustentabilidadeScreen() {
         </View>
       </View>
 
-      {/* FILTRO EQUIPAMENTO */}
       <View style={styles.filterBox}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
           <TouchableOpacity onPress={() => setEquipamentoFiltro('')} style={[styles.chip, { borderColor: theme.border, backgroundColor: equipamentoFiltro === '' ? '#38bdf8' : 'transparent' }]}><Text style={{ color: equipamentoFiltro === '' ? '#fff' : theme.textMuted, fontSize: 11, fontWeight: '700' }}>Geral</Text></TouchableOpacity>
@@ -194,7 +192,6 @@ export default function SustentabilidadeScreen() {
         </ScrollView>
       </View>
 
-      {/* MATRIZ DE DADOS */}
       <TouchableOpacity style={[styles.btnTable, { backgroundColor: theme.card, borderColor: theme.border }]} onPress={() => setMostrarTabelaBruta(!mostrarTabelaBruta)}>
         <List size={18} color={theme.primary} /><Text style={[styles.btnTableText, { color: theme.textMain }]}> Matriz de Dados p/ Auditores</Text>
         {mostrarTabelaBruta ? <ChevronUp size={18} color={theme.textMuted} /> : <ChevronDown size={18} color={theme.textMuted} />}

@@ -11,18 +11,35 @@ import {
 import { useContext, useEffect, useState } from 'react';
 import { Alert, Dimensions, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { PieChart } from 'react-native-chart-kit';
-import { api } from '../api/api';
+import { api, getSocket } from '../api/api';
 import { AppContext } from '../context/AppContext';
 
 const screenWidth = Dimensions.get('window').width;
 
 export default function DashboardScreen() {
-  const { filialAtiva, theme, refreshTrigger } = useContext(AppContext);
+  const { filialAtiva, theme } = useContext(AppContext);
   const [equipamentos, setEquipamentos] = useState([]);
   const [notificacoes, setNotificacoes] = useState([]);
 
-  // Atualiza em tempo real graças ao refreshTrigger do WebSocket no AppContext
-  useEffect(() => { carregarDados(); }, [refreshTrigger]);
+  useEffect(() => { 
+    carregarDados(); 
+    
+    const socket = getSocket();
+    
+    // Atualiza apenas a temperatura/humidade em memória sem fazer nova requisição HTTP!
+    socket.on('nova_leitura', (dadosNovaLeitura) => {
+      setEquipamentos(prev => prev.map(eq => 
+        eq.id === dadosNovaLeitura.equipamento_id 
+          ? { ...eq, ultima_temp: dadosNovaLeitura.temperatura, ultima_umidade: dadosNovaLeitura.umidade } 
+          : eq
+      ));
+    });
+
+    // Só recarrega tudo via HTTP se houver um alerta novo, exclusão ou edição de equipamento
+    socket.on('atualizacao_dados', () => carregarDados());
+
+    return () => socket.disconnect();
+  }, []);
 
   const carregarDados = async () => {
     try {
@@ -69,7 +86,6 @@ export default function DashboardScreen() {
   const qtdTotal = equipamentosDaFilial.length;
   const qtdOperando = qtdTotal - qtdDegelo - qtdFalha;
 
-  // Dados para o Gráfico Donut (Eficiência e Saúde do Frio)
   const dadosDonutStatus = [
     { name: 'Ok', value: qtdOperando, color: theme.success, legendFontColor: theme.textMuted, legendFontSize: 13 },
     { name: 'Degelo', value: qtdDegelo, color: '#38bdf8', legendFontColor: theme.textMuted, legendFontSize: 13 },
@@ -79,7 +95,6 @@ export default function DashboardScreen() {
   return (
     <ScrollView style={[styles.container, { backgroundColor: theme.bg }]} contentContainerStyle={{ padding: 16 }}>
       
-      {/* 1. KPIs idênticos à versão Web */}
       <View style={styles.kpiContainer}>
         <View style={[styles.kpiCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
           <Text style={styles.kpiTitle}>Parque IoT</Text>
@@ -99,13 +114,12 @@ export default function DashboardScreen() {
         </View>
       </View>
 
-      {/* 2. Gráfico Donut (Eficiência e Saúde do Frio) */}
       <View style={[styles.donutContainer, { backgroundColor: theme.card, borderColor: theme.border }]}>
         <Text style={styles.donutTitle}>Eficiência e Saúde do Frio</Text>
         {dadosDonutStatus.length > 0 ? (
           <PieChart
             data={dadosDonutStatus}
-            width={screenWidth - 64} // Padding ajustado
+            width={screenWidth - 64}
             height={160}
             chartConfig={{ color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})` }}
             accessor={"value"}
@@ -119,7 +133,6 @@ export default function DashboardScreen() {
         )}
       </View>
 
-      {/* 3. Cabeçalho Dinâmico da Triagem */}
       <View style={styles.flexHeader}>
         <Text style={[styles.sectionTitle, { color: theme.textMain }]}>Painel Operacional e Triagem</Text>
         {notificacoesDaFilial.length > 0 && (
@@ -130,7 +143,6 @@ export default function DashboardScreen() {
         )}
       </View>
 
-      {/* 4. Estado Vazio / Alertas Dinâmicos */}
       {notificacoesDaFilial.length === 0 ? (
         <View style={[styles.emptyState, { backgroundColor: theme.card, borderColor: theme.border }]}>
           <CheckCircle size={56} color={theme.success} style={{ marginBottom: 15 }} />
@@ -139,7 +151,6 @@ export default function DashboardScreen() {
         </View>
       ) : (
         notificacoesDaFilial.map(notif => {
-          // Lógica Espelhada do App.jsx
           const isRede = notif.tipo_alerta === 'REDE';
           const isDegelo = notif.tipo_alerta === 'DEGELO';
           const isMecanica = notif.tipo_alerta === 'MECANICA';
@@ -201,17 +212,13 @@ const styles = StyleSheet.create({
   kpiCard: { width: '48%', padding: 18, borderRadius: 12, marginBottom: 15, borderWidth: 1, elevation: 2, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 5 },
   kpiTitle: { fontSize: 11, color: '#64748b', fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
   kpiValue: { fontSize: 32, fontWeight: '900', marginTop: 8, letterSpacing: -1 },
-  
   donutContainer: { padding: 15, borderRadius: 12, borderWidth: 1, alignItems: 'center', marginBottom: 25, elevation: 2 },
   donutTitle: { fontSize: 12, fontWeight: '800', color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 },
-  
   flexHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15, flexWrap: 'wrap' },
   sectionTitle: { fontSize: 18, fontWeight: '800', letterSpacing: -0.5 },
   btnOutline: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, paddingVertical: 6, paddingHorizontal: 12, borderRadius: 8 },
   btnOutlineText: { fontSize: 12, fontWeight: '700' },
-  
   emptyState: { alignItems: 'center', padding: 40, borderRadius: 12, borderWidth: 2, borderStyle: 'dashed', marginBottom: 30 },
-  
   alertCard: { borderLeftWidth: 6, padding: 18, borderRadius: 10, marginBottom: 15, elevation: 1 },
   alertHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10 },
   alertEquip: { fontSize: 17, fontWeight: '800', marginLeft: 8, flexShrink: 1 },

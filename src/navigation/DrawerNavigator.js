@@ -1,107 +1,113 @@
 import { createDrawerNavigator } from '@react-navigation/drawer';
-import {
-    Activity,
-    Droplets,
-    History,
-    Leaf,
-    Settings,
-    Thermometer
-} from 'lucide-react-native';
-import { useContext } from 'react';
+import * as Notifications from 'expo-notifications'; // 🚀 Sistema Nativo
+import { useContext, useEffect, useRef } from 'react';
+import Toast from 'react-native-toast-message';
 
-// Importação das Telas (Screens)
 import DashboardScreen from '../screens/DashboardScreen';
 import EquipamentosScreen from '../screens/EquipamentosScreen';
 import HistoricoScreen from '../screens/HistoricoScreen';
 import RelatoriosScreen from '../screens/RelatoriosScreen';
 import SensoresScreen from '../screens/SensoresScreen';
 
-// Importação do Custom Drawer e Contexto (Para Modo Escuro, Sair e RBAC)
+import { api, getSocket } from '../api/api';
 import { AppContext } from '../context/AppContext';
 import CustomDrawer from './CustomDrawer';
 
+// 🚀 Configura como o telemóvel deve reagir quando o alerta chega (com a App aberta)
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldVibrate: true,
+  }),
+});
+
 const Drawer = createDrawerNavigator();
+const MotoresScreen = (props) => <SensoresScreen {...props} isTemp={true} />;
+const UmidadeScreen = (props) => <SensoresScreen {...props} isTemp={false} />;
 
 export default function DrawerNavigator() {
-  // Consumir o tema global definido no AppContext
   const { theme } = useContext(AppContext);
+  const idsConhecidos = useRef(new Set()); 
+  const isFirstLoad = useRef(true); 
+
+  useEffect(() => {
+    // 🚀 Pedir permissão ao utilizador para enviar alertas/sons
+    const configurarPermissoes = async () => {
+      const { status } = await Notifications.requestPermissionsAsync();
+      if (status !== 'granted') {
+        console.log('Permissão de notificação negada!');
+      }
+    };
+    configurarPermissoes();
+
+    const socket = getSocket();
+
+    const verificarNovosAlertas = async () => {
+      try {
+        const res = await api.get('/notificacoes');
+        const alertasAtuais = res.data;
+
+        if (isFirstLoad.current) {
+          idsConhecidos.current = new Set(alertasAtuais.map(n => n.id));
+          isFirstLoad.current = false;
+          return;
+        }
+
+        alertasAtuais.forEach(notif => {
+          if (!idsConhecidos.current.has(notif.id)) {
+            
+            // 🚀 DISPARA O SOM PADRÃO DO SISTEMA E O ALERTA NATIVO
+            Notifications.scheduleNotificationAsync({
+              content: {
+                title: `🚨 ALERTA: ${notif.equipamento_nome}`,
+                body: notif.mensagem,
+                sound: true, // Usa o som padrão do aparelho
+                vibrate: [0, 250, 250, 250], // Padrão de vibração
+                priority: Notifications.AndroidNotificationPriority.MAX,
+              },
+              trigger: null, // Dispara imediatamente
+            });
+
+            // Mantemos o Toast para feedback visual dentro da App
+            Toast.show({
+              type: 'alertaESG',
+              text1: `🚨 ${notif.equipamento_nome}`,
+              text2: notif.mensagem,
+              props: { tipo: notif.tipo_alerta },
+              position: 'bottom',
+              bottomOffset: 40,
+            });
+          }
+        });
+
+        idsConhecidos.current = new Set(alertasAtuais.map(n => n.id));
+      } catch (error) {
+        console.log('Erro no motor de alertas:', error);
+      }
+    };
+
+    verificarNovosAlertas();
+    socket.on('atualizacao_dados', verificarNovosAlertas);
+
+    return () => socket.disconnect();
+  }, []);
 
   return (
     <Drawer.Navigator
-      // Injeta o menu lateral personalizado que criámos
       drawerContent={(props) => <CustomDrawer {...props} />}
-      initialRouteName="Dashboard"
       screenOptions={{
-        // Estilização do Header (Barra de cima) adaptada ao Tema
         headerStyle: { backgroundColor: theme.primary },
         headerTintColor: '#fff',
-        headerTitleAlign: 'center',
-        headerTitleStyle: { fontWeight: 'bold' },
-        
-        // Estilização do Menu Lateral (Drawer) adaptada ao Tema
-        drawerActiveBackgroundColor: theme.primary,
-        drawerActiveTintColor: '#fff',
-        drawerInactiveTintColor: theme.textMain,
-        drawerLabelStyle: { fontSize: 15, fontWeight: '600', marginLeft: -10 },
-        drawerItemStyle: { borderRadius: 8, paddingHorizontal: 5 },
-        
-        // Garante que o fundo das telas muda para escuro/claro automaticamente
         sceneContainerStyle: { backgroundColor: theme.bg } 
       }}
     >
-      <Drawer.Screen 
-        name="Dashboard" 
-        component={DashboardScreen} 
-        options={{
-          title: 'Painel Central',
-          drawerIcon: ({ color }) => <Activity color={color} size={22} />
-        }} 
-      />
-      
-      <Drawer.Screen 
-        name="Motores" 
-        children={() => <SensoresScreen isTemp={true} />} 
-        options={{
-          title: 'Monitorização Térmica',
-          drawerIcon: ({ color }) => <Thermometer color={color} size={22} />
-        }} 
-      />
-      
-      <Drawer.Screen 
-        name="Umidade" 
-        children={() => <SensoresScreen isTemp={false} />} 
-        options={{
-          title: 'Monitorização Humidade',
-          drawerIcon: ({ color }) => <Droplets color={color} size={22} />
-        }} 
-      />
-      
-      <Drawer.Screen 
-        name="Equipamentos" 
-        component={EquipamentosScreen} 
-        options={{
-          title: 'Metrologia & Instalações',
-          drawerIcon: ({ color }) => <Settings color={color} size={22} />
-        }} 
-      />
-      
-      <Drawer.Screen 
-        name="Relatorios" 
-        component={RelatoriosScreen} 
-        options={{
-          title: 'Sustentabilidade ESG',
-          drawerIcon: ({ color }) => <Leaf color={color} size={22} />
-        }} 
-      />
-      
-      <Drawer.Screen 
-        name="Historico" 
-        component={HistoricoScreen} 
-        options={{
-          title: 'Auditoria RDC (Logs)',
-          drawerIcon: ({ color }) => <History color={color} size={22} />
-        }} 
-      />
+      <Drawer.Screen name="Dashboard" component={DashboardScreen} options={{ title: 'Painel Central' }} />
+      <Drawer.Screen name="Motores" component={MotoresScreen} options={{ title: 'Monitorização Térmica' }} />
+      <Drawer.Screen name="Umidade" component={UmidadeScreen} options={{ title: 'Monitorização Humidade' }} />
+      <Drawer.Screen name="Equipamentos" component={EquipamentosScreen} options={{ title: 'Ativos IoT' }} />
+      <Drawer.Screen name="Relatorios" component={RelatoriosScreen} options={{ title: 'Sustentabilidade ESG' }} />
+      <Drawer.Screen name="Historico" component={HistoricoScreen} options={{ title: 'Auditoria (Logs)' }} />
     </Drawer.Navigator>
   );
 }
