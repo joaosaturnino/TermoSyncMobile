@@ -1,31 +1,31 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
-import { io } from 'socket.io-client';
+import io from 'socket.io-client';
 
-// Troque pelo IP da sua máquina na rede Wi-Fi!
-export const BASE_URL = 'http://10.98.173.164:3001'; 
-export const API_URL = `${BASE_URL}/api`;
-export const SOCKET_URL = BASE_URL;
+// 🔴 ATENÇÃO: Substitui pelos teus números (ex: 'http://192.168.1.100:3000')
+// 💡 DICA: Se estiveres a testar no Emulador do PC (e não num telemóvel real), usa 'http://10.0.2.2:3000'
+const BASE_URL = 'http://10.98.173.164:3000'; 
 
 export const api = axios.create({
-  baseURL: API_URL,
+  baseURL: BASE_URL,
 });
 
-// INTERCEPTOR: A Magia acontece aqui!
-// Antes de QUALQUER requisição sair do telemóvel, ele vai buscar o token e anexa ao Cabeçalho.
-api.interceptors.request.use(
-  async (config) => {
+api.interceptors.request.use(async (config) => {
+  try {
     const token = await AsyncStorage.getItem('token');
     if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+      config.headers.Authorization = `Bearer ${token}`; 
     }
-    return config;
-  },
-  (error) => {
-    return Promise.reject(error);
+  } catch (error) {
+    console.log('Erro ao anexar token:', error);
   }
-);
+  return config;
+});
 
+let socket;
 export const getSocket = () => {
-  return io(SOCKET_URL);
+  if (!socket) {
+    socket = io(BASE_URL); 
+  }
+  return socket;
 };
