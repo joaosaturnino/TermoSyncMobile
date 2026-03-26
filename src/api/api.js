@@ -3,7 +3,7 @@ import axios from 'axios';
 import { io } from 'socket.io-client';
 
 // Troque pelo IP da sua máquina na rede Wi-Fi!
-export const BASE_URL = 'http://192.168.137.198:3001'; 
+export const BASE_URL = 'http://10.98.173.164:3001'; 
 export const API_URL = `${BASE_URL}/api`;
 export const SOCKET_URL = BASE_URL;
 
