@@ -11,7 +11,7 @@ import LoginScreen from './src/screens/LoginScreen';
 
 const Stack = createNativeStackNavigator();
 
-// 🚀 CONFIGURAÇÃO GLOBAL DO POP-UP (Ajustado para o fundo)
+// 🚀 CONFIGURAÇÃO GLOBAL DO POP-UP (Movido para o TOPO)
 const toastConfig = {
   alertaESG: ({ text1, text2, props }) => {
     const tipo = props?.tipo || ''; 
@@ -30,8 +30,7 @@ const toastConfig = {
         borderLeftColor: colorTheme, borderRadius: 10, padding: 16,
         shadowColor: '#000', shadowOffset: { width: 0, height: 3 },
         shadowOpacity: 0.15, shadowRadius: 6, elevation: 10,
-        // Mudámos de marginTop para marginBottom para dar espaço à barra de navegação do Android/iOS
-        marginBottom: 10, 
+        marginTop: 15, // <-- CORREÇÃO: Usamos marginTop para afastar da barra de status
         zIndex: 99999 
       }}>
         <Text style={{ fontSize: 15, fontWeight: '900', color: colorTheme, marginBottom: 5 }}>{text1}</Text>

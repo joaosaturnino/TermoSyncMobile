@@ -26,16 +26,21 @@ export default function DashboardScreen() {
     
     const socket = getSocket();
     
-    // Atualiza apenas a temperatura/humidade em memória sem fazer nova requisição HTTP!
+    // 🔴 CORREÇÃO: Comparação rigorosa de String e injeção do status do motor em tempo real
     socket.on('nova_leitura', (dadosNovaLeitura) => {
       setEquipamentos(prev => prev.map(eq => 
-        eq.id === dadosNovaLeitura.equipamento_id 
-          ? { ...eq, ultima_temp: dadosNovaLeitura.temperatura, ultima_umidade: dadosNovaLeitura.umidade } 
+        String(eq.id) === String(dadosNovaLeitura.equipamento_id) 
+          ? { 
+              ...eq, 
+              ultima_temp: dadosNovaLeitura.temperatura, 
+              ultima_umidade: dadosNovaLeitura.umidade,
+              motor_ligado: dadosNovaLeitura.motor_ligado === true || dadosNovaLeitura.motor_ligado == 1,
+              em_degelo: dadosNovaLeitura.em_degelo === true || dadosNovaLeitura.em_degelo == 1
+            } 
           : eq
       ));
     });
 
-    // Só recarrega tudo via HTTP se houver um alerta novo, exclusão ou edição de equipamento
     socket.on('atualizacao_dados', () => carregarDados());
 
     return () => socket.disconnect();
@@ -44,8 +49,8 @@ export default function DashboardScreen() {
   const carregarDados = async () => {
     try {
       const [resEquip, resNotif] = await Promise.all([
-        api.get('/api/equipamentos'), // <-- CORRIGIDO AQUI
-        api.get('/api/notificacoes')  // <-- CORRIGIDO AQUI
+        api.get('/api/equipamentos'),
+        api.get('/api/notificacoes') 
       ]);
       setEquipamentos(resEquip.data);
       setNotificacoes(resNotif.data);
@@ -56,7 +61,7 @@ export default function DashboardScreen() {
 
   const resolverNotificacao = async (id, acaoText) => {
     try {
-      await api.put(`/api/notificacoes/${id}/resolver`, { nota_resolucao: `${acaoText} via Mobile` }); // <-- CORRIGIDO AQUI
+      await api.put(`/api/notificacoes/${id}/resolver`, { nota_resolucao: `${acaoText} via Mobile` });
       carregarDados();
     } catch (e) {
       console.log(e);
@@ -68,7 +73,7 @@ export default function DashboardScreen() {
       { text: 'Cancelar', style: 'cancel' },
       { text: 'Confirmar', onPress: async () => {
           try {
-            await api.put('/api/notificacoes/resolver-todas'); // <-- CORRIGIDO AQUI
+            await api.put('/api/notificacoes/resolver-todas');
             carregarDados();
           } catch (e) {
             console.log(e);

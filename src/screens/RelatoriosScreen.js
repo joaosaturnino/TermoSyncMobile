@@ -27,7 +27,6 @@ export default function SustentabilidadeScreen() {
 
   const carregarDados = useCallback(async () => {
     try {
-      // 🔴 CORREÇÃO: Adicionado /api em ambos os endpoints
       const [resRel, resEq] = await Promise.all([
         api.get('/api/relatorios'), 
         api.get('/api/equipamentos')
@@ -47,9 +46,8 @@ export default function SustentabilidadeScreen() {
 
     const socket = getSocket();
 
+    // 🔴 CORREÇÃO: Removido o filtro bloqueador de "LOJA", garantindo que flui livremente.
     socket.on('nova_leitura', (dadosNovaLeitura) => {
-      if (userRole === 'LOJA' && dadosNovaLeitura.filial !== userFilial) return;
-
       setRelatorios(prev => {
         const novosDados = [...prev, dadosNovaLeitura];
         if (novosDados.length > 15000) novosDados.shift();
@@ -60,7 +58,7 @@ export default function SustentabilidadeScreen() {
     socket.on('atualizacao_dados', () => carregarDados());
 
     return () => socket.disconnect();
-  }, [carregarDados, userRole, userFilial]);
+  }, [carregarDados]);
 
   const stats = useMemo(() => {
     const filtrados = relatorios.filter(r => {
@@ -93,7 +91,6 @@ export default function SustentabilidadeScreen() {
       ? ((83.144 / 0.0083144) / (-Math.log(somaExp / filtrados.length)) - 273.15).toFixed(2)
       : '--';
 
-    // DOWNSAMPLING PARA O GRÁFICO (Otimização fundamental de memória)
     const arrGrafico = filtrados.map(f => parseFloat(f.temperatura));
     const arrEnergia = filtrados.map(f => parseFloat(f.consumo_kwh || 0));
 
@@ -114,8 +111,8 @@ export default function SustentabilidadeScreen() {
       minTemp: tMin === Infinity ? '--' : tMin.toFixed(1),
       maxTemp: tMax === -Infinity ? '--' : tMax.toFixed(1),
       mktValue: mkt,
-      dadosGrafico: dadosGraficoFiltrados, // ARRAY LEVE
-      dadosEnergia: dadosEnergiaFiltrados, // ARRAY LEVE
+      dadosGrafico: dadosGraficoFiltrados,
+      dadosEnergia: dadosEnergiaFiltrados,
       dadosBrutos: [...filtrados].reverse().slice(0, 50)
     };
   }, [relatorios, equipamentos, filialAtiva, equipamentoFiltro]);

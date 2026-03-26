@@ -35,7 +35,6 @@ export default function DrawerNavigator() {
 
   const tocarAlerta = async () => {
     try {
-      // 🚀 Comandos de Áudio ATIVADOS
       await setAudioModeAsync({ playsInSilentMode: true });
       player.seekTo(0);
       player.play();
@@ -49,7 +48,7 @@ export default function DrawerNavigator() {
 
     const verificarNovosAlertas = async () => {
       try {
-        const res = await api.get('/notificacoes');
+        const res = await api.get('/api/notificacoes');
         const alertasAtuais = res.data;
 
         if (isFirstLoad.current) {
@@ -70,8 +69,9 @@ export default function DrawerNavigator() {
               text1: `🚨 ALERTA: ${notif.equipamento_nome}`,
               text2: notif.mensagem,
               props: { tipo: notif.tipo_alerta },
-              position: 'bottom',
-              bottomOffset: 40,
+              position: 'top',       // <-- CORREÇÃO: Agora desce a partir do topo
+              topOffset: 55,         // <-- Afastamento seguro da barra de horas/bateria
+              visibilityTime: 5000   // <-- Mantém a notificação visível por 5 segundos
             });
           }
         });
@@ -86,7 +86,7 @@ export default function DrawerNavigator() {
     socket.on('atualizacao_dados', verificarNovosAlertas);
 
     return () => socket.disconnect();
-  }, [player]); // 🚀 Player adicionado como dependência
+  }, [player]);
 
   return (
     <Drawer.Navigator

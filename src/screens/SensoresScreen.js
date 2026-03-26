@@ -138,7 +138,6 @@ export default function SensoresScreen({ isTemp }) {
 
   const carregarDados = useCallback(async () => {
     try {
-      // 🔴 CORREÇÃO: Adicionado /api
       const res = await api.get('/api/equipamentos');
       setEquipamentos(res.data);
     } catch (error) {
@@ -153,10 +152,17 @@ export default function SensoresScreen({ isTemp }) {
     
     const socket = getSocket();
     
+    // 🔴 CORREÇÃO: Comparação de String e parse rigoroso do status
     socket.on('nova_leitura', (dadosNovaLeitura) => {
       setEquipamentos(prev => prev.map(eq => 
-        eq.id === dadosNovaLeitura.equipamento_id 
-          ? { ...eq, ultima_temp: dadosNovaLeitura.temperatura, ultima_umidade: dadosNovaLeitura.umidade } 
+        String(eq.id) === String(dadosNovaLeitura.equipamento_id) 
+          ? { 
+              ...eq, 
+              ultima_temp: dadosNovaLeitura.temperatura, 
+              ultima_umidade: dadosNovaLeitura.umidade,
+              motor_ligado: dadosNovaLeitura.motor_ligado === true || dadosNovaLeitura.motor_ligado == 1,
+              em_degelo: dadosNovaLeitura.em_degelo === true || dadosNovaLeitura.em_degelo == 1
+            } 
           : eq
       ));
     });
@@ -180,7 +186,6 @@ export default function SensoresScreen({ isTemp }) {
     return matchFilial && matchSetor;
   });
 
-  // 🚀 OTIMIZAÇÃO CRÍTICA: Isolar o renderItem da FlatList para não quebrar o React.memo
   const renderItem = useCallback(({ item }) => (
     <SensorCard eq={item} theme={theme} isTemp={isTemp} />
   ), [theme, isTemp]);
@@ -226,7 +231,7 @@ export default function SensoresScreen({ isTemp }) {
       <FlatList
         data={filtrados}
         keyExtractor={(item) => String(item.id)}
-        renderItem={renderItem}  // 🚀 Utiliza a função protegida pelo useCallback
+        renderItem={renderItem}  
         contentContainerStyle={styles.listContent}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[isTemp ? theme.primary : theme.info]} />}
         ListEmptyComponent={
@@ -237,7 +242,6 @@ export default function SensoresScreen({ isTemp }) {
             </Text>
           </View>
         }
-        // 🚀 PROPS DE OTIMIZAÇÃO DE MEMÓRIA PARA WEBSOCKETS RÁPIDOS
         initialNumToRender={8}
         maxToRenderPerBatch={8}
         windowSize={5}
