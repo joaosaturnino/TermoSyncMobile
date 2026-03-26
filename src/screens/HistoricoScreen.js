@@ -1,3 +1,5 @@
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
 import {
   AlertTriangle,
   Calendar,
@@ -7,6 +9,7 @@ import {
 import React, { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   RefreshControl,
   StyleSheet,
@@ -17,9 +20,6 @@ import {
 import { api } from '../api/api';
 import { AppContext } from '../context/AppContext';
 
-/**
- * Item da Timeline: Réplica fiel da versão Web
- */
 const TimelineItem = React.memo(({ item, theme }) => (
   <View style={styles.timelineItem}>
     <View style={[styles.timelineMarker, { backgroundColor: theme.primary }]} />
@@ -58,33 +58,80 @@ export default function HistoricoScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Função para buscar os dados no servidor
   const carregarHistorico = useCallback(async () => {
     try {
-      const res = await api.get('/notificacoes/historico');
+      const res = await api.get('/api/notificacoes/historico');
       setHistorico(res.data);
     } catch (error) {
       console.error('Erro ao carregar logs RDC:', error);
     } finally {
       setLoading(false);
-      setRefreshing(false); // Desativa o ícone de refresh após o carregamento
+      setRefreshing(false);
     }
   }, []);
 
-  // Carregamento inicial
   useEffect(() => {
     carregarHistorico();
-  }, [carregarHistorico]);
-
-  // Função acionada ao deslizar de cima para baixo
-  const onRefresh = useCallback(() => {
-    setRefreshing(true); // Ativa o ícone de carregamento visual
-    carregarHistorico(); // Chama a API novamente
   }, [carregarHistorico]);
 
   const filtrados = useMemo(() => {
     return historico.filter(h => filialAtiva === 'Todas' || h.filial === filialAtiva);
   }, [historico, filialAtiva]);
+
+  // 🔴 NOVA FUNÇÃO PARA GERAR O PDF
+  const gerarPDF = async () => {
+    if (filtrados.length === 0) return Alert.alert('Aviso', 'Não há dados para exportar.');
+
+    const htmlContent = `
+      <html>
+        <head>
+          <style>
+            body { font-family: 'Helvetica', sans-serif; padding: 20px; color: #333; }
+            h1 { color: #059669; text-align: center; }
+            h3 { text-align: center; color: #666; margin-bottom: 30px; }
+            table { width: 100%; border-collapse: collapse; }
+            th { background-color: #f1f5f9; padding: 10px; text-align: left; border: 1px solid #ddd; font-size: 12px; }
+            td { padding: 10px; border: 1px solid #ddd; font-size: 11px; }
+            .footer { margin-top: 30px; font-size: 10px; text-align: center; color: #999; }
+          </style>
+        </head>
+        <body>
+          <h1>TermoSync - Relatório de Auditoria</h1>
+          <h3>Unidade: ${filialAtiva} | Data: ${new Date().toLocaleDateString()}</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>Data/Hora</th>
+                <th>Equipamento</th>
+                <th>Filial/Setor</th>
+                <th>Ocorrência</th>
+                <th>Resolução Técnica</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${filtrados.map(item => `
+                <tr>
+                  <td>${new Date(item.data_hora).toLocaleString()}</td>
+                  <td>${item.equipamento_nome}</td>
+                  <td>${item.filial} / ${item.setor}</td>
+                  <td style="color: #ef4444;">${item.mensagem}</td>
+                  <td>${item.nota_resolucao}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+          <p class="footer">Documento gerado eletronicamente para fins de conformidade RDC/HACCP.</p>
+        </body>
+      </html>
+    `;
+
+    try {
+      const { uri } = await Print.printToFileAsync({ html: htmlContent });
+      await Sharing.shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf' });
+    } catch (error) {
+      Alert.alert('Erro', 'Não foi possível gerar o PDF.');
+    }
+  };
 
   if (loading) {
     return (
@@ -101,7 +148,7 @@ export default function HistoricoScreen() {
           <Text style={[styles.title, { color: theme.textMain }]}>Livro de Registo Oficial</Text>
           <Text style={{ color: theme.textMuted, fontSize: 12, marginTop: 2 }}>Conformidade RDC / HACCP</Text>
         </View>
-        <TouchableOpacity style={styles.btnPdf}>
+        <TouchableOpacity style={styles.btnPdf} onPress={gerarPDF}>
           <FileText size={18} color="#fff" />
           <Text style={styles.btnPdfText}> PDF</Text>
         </TouchableOpacity>
@@ -119,16 +166,8 @@ export default function HistoricoScreen() {
             <Text style={{ color: theme.textMuted, marginTop: 10 }}>Nenhum log auditável encontrado.</Text>
           </View>
         }
-        // ==========================================
-        // Lógica de Puxar para Atualizar (Pull-to-Refresh)
-        // ==========================================
         refreshControl={
-          <RefreshControl 
-            refreshing={refreshing} 
-            onRefresh={onRefresh} 
-            colors={[theme.primary]} // Cor da rodinha de carregamento (Android)
-            tintColor={theme.primary} // Cor da rodinha de carregamento (iOS)
-          />
+          <RefreshControl refreshing={refreshing} onRefresh={carregarHistorico} colors={[theme.primary]} />
         }
       />
     </View>

@@ -93,7 +93,8 @@ export default function EquipamentosScreen() {
 
   const carregarDados = useCallback(async () => {
     try {
-      const res = await api.get('/equipamentos');
+      // 🔴 CORREÇÃO: Adicionado /api
+      const res = await api.get('/api/equipamentos');
       setEquipamentos(res.data);
     } catch (error) { 
       console.log('Erro ao carregar', error); 
@@ -134,9 +135,11 @@ export default function EquipamentosScreen() {
     if (!form.nome || !form.filial || !form.setor || !form.tipo) return Alert.alert('Erro', 'Preencha os campos obrigatórios.');
     try {
       if (editMode) { 
-        await api.put(`/equipamentos/${form.id}/edit`, form); 
+        // 🔴 CORREÇÃO: Adicionado /api
+        await api.put(`/api/equipamentos/${form.id}/edit`, form); 
       } else { 
-        await api.post('/equipamentos', form); 
+        // 🔴 CORREÇÃO: Adicionado /api
+        await api.post('/api/equipamentos', form); 
       }
       setModalVisible(false);
       carregarDados();
@@ -149,7 +152,8 @@ export default function EquipamentosScreen() {
   const confirmarExclusao = useCallback((id, nome) => {
     Alert.alert('Remover Máquina', `Remover "${nome}" permanentemente?`, [
       { text: 'Cancelar', style: 'cancel' },
-      { text: 'Remover', style: 'destructive', onPress: () => api.delete(`/equipamentos/${id}`).then(carregarDados) }
+      // 🔴 CORREÇÃO: Adicionado /api
+      { text: 'Remover', style: 'destructive', onPress: () => api.delete(`/api/equipamentos/${id}`).then(carregarDados) }
     ]);
   }, [carregarDados]);
 

@@ -44,8 +44,8 @@ export default function DashboardScreen() {
   const carregarDados = async () => {
     try {
       const [resEquip, resNotif] = await Promise.all([
-        api.get('/equipamentos'),
-        api.get('/notificacoes')
+        api.get('/api/equipamentos'), // <-- CORRIGIDO AQUI
+        api.get('/api/notificacoes')  // <-- CORRIGIDO AQUI
       ]);
       setEquipamentos(resEquip.data);
       setNotificacoes(resNotif.data);
@@ -56,7 +56,7 @@ export default function DashboardScreen() {
 
   const resolverNotificacao = async (id, acaoText) => {
     try {
-      await api.put(`/notificacoes/${id}/resolver`, { nota_resolucao: `${acaoText} via Mobile` });
+      await api.put(`/api/notificacoes/${id}/resolver`, { nota_resolucao: `${acaoText} via Mobile` }); // <-- CORRIGIDO AQUI
       carregarDados();
     } catch (e) {
       console.log(e);
@@ -68,7 +68,7 @@ export default function DashboardScreen() {
       { text: 'Cancelar', style: 'cancel' },
       { text: 'Confirmar', onPress: async () => {
           try {
-            await api.put('/notificacoes/resolver-todas');
+            await api.put('/api/notificacoes/resolver-todas'); // <-- CORRIGIDO AQUI
             carregarDados();
           } catch (e) {
             console.log(e);

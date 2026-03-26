@@ -2,12 +2,20 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import io from 'socket.io-client';
 
-// 🔴 ATENÇÃO: Substitui pelos teus números (ex: 'http://192.168.1.100:3000')
-// 💡 DICA: Se estiveres a testar no Emulador do PC (e não num telemóvel real), usa 'http://10.0.2.2:3000'
-const BASE_URL = 'http://10.98.173.164:3000'; 
+// 🔴 CONFIGURAÇÃO DO IP (Escolhe a opção correta para o teu caso)
+
+// OPÇÃO A: Se estiveres a usar o EMULADOR DO ANDROID STUDIO
+// const BASE_URL = 'http://10.0.2.2:3000';
+
+// OPÇÃO B: Se estiveres a usar o SIMULADOR DO iOS
+// const BASE_URL = 'http://localhost:3000';
+
+// OPÇÃO C: Se estiveres a usar o EXPO GO num TELEMÓVEL FÍSICO (Android ou iPhone)
+const BASE_URL = 'http://192.168.200.27:3000'; // Sem espaços!
 
 export const api = axios.create({
   baseURL: BASE_URL,
+  timeout: 5000, 
 });
 
 api.interceptors.request.use(async (config) => {

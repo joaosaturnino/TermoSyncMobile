@@ -138,7 +138,8 @@ export default function SensoresScreen({ isTemp }) {
 
   const carregarDados = useCallback(async () => {
     try {
-      const res = await api.get('/equipamentos');
+      // 🔴 CORREÇÃO: Adicionado /api
+      const res = await api.get('/api/equipamentos');
       setEquipamentos(res.data);
     } catch (error) {
       console.error('Erro:', error);

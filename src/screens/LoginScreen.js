@@ -16,7 +16,7 @@ export default function LoginScreen({ onLogin }) {
     setLoading(true);
     
     try {
-      const res = await api.post('/login', { usuario, senha });
+      const res = await api.post('/api/login', { usuario, senha });
       
       // Guarda os dados
       await AsyncStorage.setItem('token', res.data.token);
@@ -30,9 +30,10 @@ export default function LoginScreen({ onLogin }) {
       if (error.response) {
         Alert.alert('Falha na Autenticação', error.response.data.error || 'Credenciais incorretas.');
       } else {
+        // 🔴 MODO DETETIVE ATIVADO: Vai mostrar o URL exato e o erro técnico
         Alert.alert(
-          'Servidor Inacessível', 
-          'Não foi possível ligar ao backend. Verifica se o IP em api.js está correto e se o PC e o telemóvel estão na mesma rede Wi-Fi.'
+          'Detalhes do Erro de Rede', 
+          `Tentou ligar a: ${api.defaults.baseURL}/api/login\n\nErro interno: ${error.message}`
         );
       }
     } finally {

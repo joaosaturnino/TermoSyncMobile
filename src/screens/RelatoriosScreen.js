@@ -27,9 +27,10 @@ export default function SustentabilidadeScreen() {
 
   const carregarDados = useCallback(async () => {
     try {
+      // 🔴 CORREÇÃO: Adicionado /api em ambos os endpoints
       const [resRel, resEq] = await Promise.all([
-        api.get('/relatorios'), 
-        api.get('/equipamentos')
+        api.get('/api/relatorios'), 
+        api.get('/api/equipamentos')
       ]);
       setRelatorios(resRel.data);
       setEquipamentos(resEq.data);
