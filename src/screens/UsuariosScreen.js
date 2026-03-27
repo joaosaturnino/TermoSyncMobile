@@ -1,175 +1,137 @@
-import { Edit, Save, ShieldCheck, Trash2, UserPlus, Users, X } from 'lucide-react-native';
-import { useCallback, useContext, useEffect, useState } from 'react';
-import {
-    Alert, FlatList, Modal, RefreshControl, ScrollView, StyleSheet,
-    Text, TextInput, TouchableOpacity, View
-} from 'react-native';
-import { api } from '../api/api';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useContext, useState } from 'react';
+import { Alert, FlatList, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import api from '../api/api';
 import { AppContext } from '../context/AppContext';
 
 export default function UsuariosScreen() {
-  const { theme, userRole } = useContext(AppContext);
-  const [usuarios, setUsuarios] = useState([]);
-  const [filiaisDb, setFiliaisDb] = useState([]);
-  const [refreshing, setRefreshing] = useState(false);
+  const { usuariosLista, carregarDadosBasicos, filiaisDb } = useContext(AppContext);
   const [modalVisible, setModalVisible] = useState(false);
+  const [form, setForm] = useState({ id: '', usuario: '', senha: '', role: 'LOJA', filial: '', tipo_acesso: 'GERENTE', nome_identidade: '' });
 
-  const formInicial = { id: '', usuario: '', senha: '', role: 'LOJA', filial: '' };
-  const [form, setForm] = useState(formInicial);
-
-  const carregarDados = useCallback(async () => {
-    if (userRole !== 'ADMIN') return;
-    try {
-      const [resUsr, resFiliais] = await Promise.all([
-        api.get('/api/usuarios'),
-        api.get('/api/auxiliares/filiais').catch(() => ({ data: [] }))
-      ]);
-      setUsuarios(resUsr.data);
-      setFiliaisDb(resFiliais.data.filter(f => f !== 'Todas'));
-    } catch (error) { } finally { setRefreshing(false); }
-  }, [userRole]);
-
-  useEffect(() => { carregarDados(); }, [carregarDados]);
-
-  const salvarUsuario = async () => {
-    if (!form.usuario || !form.role) return Alert.alert('Aviso', 'Preencha o login e o nível de acesso.');
-    if (!form.id && !form.senha) return Alert.alert('Aviso', 'Senha obrigatória para contas novas.');
-    if (form.role === 'LOJA' && !form.filial) return Alert.alert('Aviso', 'Defina a filial para o Gestor de Loja.');
-
-    try {
-      const payload = { ...form, filial: form.role !== 'LOJA' ? 'Todas' : form.filial };
-      if (form.id) await api.put(`/api/usuarios/${form.id}`, payload);
-      else await api.post('/api/usuarios', payload);
-      setModalVisible(false); carregarDados();
-    } catch (error) { Alert.alert('Erro', 'Utilizador já existe ou falha na rede.'); }
+  const abrirModal = (tipo) => {
+    let roleT = 'LOJA';
+    if (tipo === 'TECNICO') roleT = 'MANUTENCAO';
+    if (tipo === 'OUTROS') roleT = 'ADMIN';
+    setForm({ id: '', usuario: '', senha: '', role: roleT, filial: '', tipo_acesso: tipo, nome_identidade: '' });
+    setModalVisible(true);
   };
 
-  const confirmarExclusao = (id, nome) => {
-    Alert.alert('Remover Acesso', `Remover "${nome}" permanentemente?`, [
+  const salvar = async () => {
+    if (!form.usuario) return Alert.alert('Aviso', 'Preencha o Login.');
+    const payload = { 
+      usuario: form.usuario, senha: form.senha, role: form.role,
+      filial: form.role !== 'LOJA' ? 'Todas' : form.filial,
+      nome_gerente: form.tipo_acesso === 'GERENTE' ? form.nome_identidade : null,
+      nome_coordenador: form.tipo_acesso === 'COORDENADOR' ? form.nome_identidade : null,
+      nome_tecnico: form.tipo_acesso === 'TECNICO' ? form.nome_identidade : null
+    };
+
+    try {
+      if (form.id) await api.put(`/usuarios/${form.id}`, payload);
+      else {
+        if (!form.senha) return Alert.alert('Aviso', 'Senha obrigatória.');
+        await api.post('/usuarios', payload);
+      }
+      setModalVisible(false);
+      carregarDadosBasicos();
+    } catch(e) { Alert.alert('Erro', 'O login já existe.'); }
+  };
+
+  const deletar = (id) => {
+    Alert.alert('Remover Conta', 'Certeza?', [
       { text: 'Cancelar', style: 'cancel' },
-      { text: 'Remover', style: 'destructive', onPress: () => api.delete(`/api/usuarios/${id}`).then(carregarDados) }
+      { text: 'Remover', style: 'destructive', onPress: async () => { await api.delete(`/usuarios/${id}`); carregarDadosBasicos(); } }
     ]);
   };
 
-  if (userRole !== 'ADMIN') {
-    return (
-      <View style={[styles.container, { backgroundColor: theme.bg, justifyContent: 'center', alignItems: 'center' }]}>
-        <ShieldCheck size={64} color={theme.border} />
-        <Text style={{ color: theme.textMuted, marginTop: 15, fontWeight: 'bold' }}>Acesso Restrito a Administradores</Text>
-      </View>
-    );
-  }
-
   return (
-    <View style={[styles.container, { backgroundColor: theme.bg }]}>
-      <View style={styles.headerArea}>
-        <Text style={[styles.listTitle, { color: theme.textMain }]}>Contas Registadas ({usuarios.length})</Text>
-        <TouchableOpacity style={[styles.btnNovo, { backgroundColor: theme.primary }]} onPress={() => { setForm(formInicial); setModalVisible(true); }}>
-          <UserPlus color="#fff" size={20} /><Text style={styles.btnText}> Novo</Text>
-        </TouchableOpacity>
-      </View>
+    <View style={styles.container}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.btnRow}>
+        <TouchableOpacity style={[styles.btnTop, {backgroundColor: '#059669'}]} onPress={() => abrirModal('GERENTE')}><Text style={styles.btnTopText}>+ Gerente</Text></TouchableOpacity>
+        <TouchableOpacity style={[styles.btnTop, {backgroundColor: '#0284c7'}]} onPress={() => abrirModal('COORDENADOR')}><Text style={styles.btnTopText}>+ Coord.</Text></TouchableOpacity>
+        <TouchableOpacity style={[styles.btnTop, {backgroundColor: '#f59e0b'}]} onPress={() => abrirModal('TECNICO')}><Text style={styles.btnTopText}>+ Técnico</Text></TouchableOpacity>
+        <TouchableOpacity style={[styles.btnTop, {backgroundColor: '#475569'}]} onPress={() => abrirModal('OUTROS')}><Text style={styles.btnTopText}>+ Admin</Text></TouchableOpacity>
+      </ScrollView>
 
       <FlatList
-        data={usuarios}
-        keyExtractor={(item) => String(item.id)}
-        contentContainerStyle={{ padding: 16 }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); carregarDados(); }} />}
+        data={usuariosLista}
+        keyExtractor={i => i.id.toString()}
         renderItem={({item}) => {
-          let roleColor = theme.info; let roleName = 'Gestor de Loja';
-          if (item.role === 'ADMIN') { roleColor = theme.danger; roleName = 'Administrador Master'; }
-          else if (item.role === 'MANUTENCAO') { roleColor = theme.primary; roleName = 'Manutenção Global'; }
+          let identity = '';
+          if (item.role === 'MANUTENCAO') identity = `Técnico: ${item.nome_tecnico || 'Geral'}`;
+          else if (item.nome_gerente) identity = `Gerente: ${item.nome_gerente}`;
+          else if (item.nome_coordenador) identity = `Coord: ${item.nome_coordenador}`;
 
           return (
-            <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
-              <View style={{ flex: 1 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 5 }}>
-                  <Users color={roleColor} size={18} style={{ marginRight: 8 }} />
-                  <Text style={[styles.userName, { color: theme.textMain }]}>{item.usuario}</Text>
-                </View>
-                <Text style={[styles.badgeRole, { backgroundColor: roleColor }]}>{roleName}</Text>
-                <Text style={{ fontSize: 12, marginTop: 8, color: theme.textMuted }}>Âmbito: <Text style={{ fontWeight: 'bold' }}>{item.filial}</Text></Text>
+            <View style={styles.card}>
+              <View style={styles.cardInfo}>
+                 <Text style={styles.usuario}>@{item.usuario}</Text>
+                 {identity ? <Text style={styles.identity}>{identity}</Text> : null}
+                 <Text style={styles.detalhes}>{item.role === 'ADMIN' ? 'Admin Master' : item.role === 'MANUTENCAO' ? 'Acesso Global' : item.filial}</Text>
               </View>
-              <View style={{ justifyContent: 'center', paddingLeft: 10 }}>
-                <TouchableOpacity style={styles.btnAction} onPress={() => { setForm({ ...item, senha: '' }); setModalVisible(true); }}><Edit color={theme.primary} size={20} /></TouchableOpacity>
-                <TouchableOpacity style={[styles.btnAction, { marginTop: 10 }]} onPress={() => confirmarExclusao(item.id, item.usuario)}><Trash2 color={theme.danger} size={20} /></TouchableOpacity>
+              <View style={styles.actions}>
+                <TouchableOpacity onPress={() => deletar(item.id)}><MaterialCommunityIcons name="delete" size={24} color="#ef4444" /></TouchableOpacity>
               </View>
             </View>
           );
         }}
       />
 
-      <Modal visible={modalVisible} animationType="slide" transparent={true}>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: theme.card }]}>
-            <ScrollView showsVerticalScrollIndicator={false}>
-              <Text style={[styles.formTitle, { color: theme.textMain, marginBottom: 15 }]}>{form.id ? 'Editar Credencial' : 'Novo Acesso'}</Text>
+      <Modal visible={modalVisible} transparent animationType="slide">
+         <View style={styles.modalContainer}>
+            <View style={styles.modalContent}>
+               <Text style={styles.modalTitle}>
+                 {form.id ? 'Editar Conta' : form.tipo_acesso === 'GERENTE' ? 'Novo Gerente' : form.tipo_acesso === 'COORDENADOR' ? 'Novo Coordenador' : form.tipo_acesso === 'TECNICO' ? 'Novo Técnico' : 'Novo Admin'}
+               </Text>
+               
+               {form.role !== 'ADMIN' && (
+                 <TextInput style={styles.input} placeholder="Nome Real Completo" value={form.nome_identidade} onChangeText={t => setForm({...form, nome_identidade: t})} />
+               )}
+               
+               <TextInput style={styles.input} placeholder="Login (Ex: gerente_loja)" value={form.usuario} onChangeText={t => setForm({...form, usuario: t})} editable={!form.id} />
+               <TextInput style={styles.input} placeholder="Palavra-passe" value={form.senha} onChangeText={t => setForm({...form, senha: t})} secureTextEntry={!form.id} />
+               
+               {form.role === 'LOJA' && (
+                 <View style={{height: 120, marginBottom: 15, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 8, padding: 5}}>
+                   <Text style={{color:'gray', marginBottom:5, paddingLeft:5}}>Vincular à Loja:</Text>
+                   <ScrollView>
+                     {filiaisDb.map(f => (
+                        <TouchableOpacity key={f} onPress={()=>setForm({...form, filial: f})} style={[styles.selBox, form.filial === f && styles.selActive]}><Text>{f}</Text></TouchableOpacity>
+                     ))}
+                   </ScrollView>
+                 </View>
+               )}
 
-              <Text style={[styles.label, { color: theme.textMain }]}>LOGIN</Text>
-              <TextInput style={[styles.input, { borderColor: theme.border, color: theme.textMain }]} autoCapitalize="none" value={form.usuario} onChangeText={(t) => setForm({...form, usuario: t})} />
-              
-              <Text style={[styles.label, { color: theme.textMain }]}>SENHA {form.id && '(Em branco = manter atual)'}</Text>
-              <TextInput style={[styles.input, { borderColor: theme.border, color: theme.textMain }]} secureTextEntry value={form.senha} onChangeText={(t) => setForm({...form, senha: t})} />
-
-              <Text style={[styles.label, { color: theme.textMain }]}>PERMISSÃO</Text>
-              <View style={styles.chipRow}>
-                <TouchableOpacity onPress={() => setForm({...form, role: 'LOJA'})} style={[styles.chip, { borderColor: theme.border }, form.role === 'LOJA' && { backgroundColor: theme.info }]}>
-                  <Text style={{ color: form.role === 'LOJA' ? '#fff' : theme.textMuted, fontSize: 11, fontWeight: 'bold' }}>Loja Local</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => setForm({...form, role: 'MANUTENCAO'})} style={[styles.chip, { borderColor: theme.border }, form.role === 'MANUTENCAO' && { backgroundColor: theme.primary }]}>
-                  <Text style={{ color: form.role === 'MANUTENCAO' ? '#fff' : theme.textMuted, fontSize: 11, fontWeight: 'bold' }}>Manutenção</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => setForm({...form, role: 'ADMIN'})} style={[styles.chip, { borderColor: theme.border }, form.role === 'ADMIN' && { backgroundColor: theme.danger }]}>
-                  <Text style={{ color: form.role === 'ADMIN' ? '#fff' : theme.textMuted, fontSize: 11, fontWeight: 'bold' }}>Master</Text>
-                </TouchableOpacity>
-              </View>
-
-              {form.role === 'LOJA' && (
-                <>
-                  <Text style={[styles.label, { color: theme.textMain }]}>FILIAL DO GESTOR</Text>
-                  <TextInput style={[styles.input, { borderColor: theme.border, color: theme.textMain }]} placeholder="Ex: Loja Porto" placeholderTextColor={theme.textMuted} value={form.filial} onChangeText={(t) => setForm({...form, filial: t})} />
-                  {filiaisDb.length > 0 && (
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 15 }}>
-                      {filiaisDb.map(f => (
-                        <TouchableOpacity key={f} onPress={() => setForm({ ...form, filial: f })} style={[styles.chipSugestao, { borderColor: theme.border }]}>
-                          <Text style={{ fontSize: 11, color: theme.textMuted }}>{f}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </ScrollView>
-                  )}
-                </>
-              )}
-            </ScrollView>
-
-            <View style={styles.modalActions}>
-              <TouchableOpacity style={[styles.btnCancel, { borderColor: theme.border }]} onPress={() => setModalVisible(false)}><X color={theme.textMuted} size={24} /></TouchableOpacity>
-              <TouchableOpacity style={[styles.btnSave, { backgroundColor: theme.primary }]} onPress={salvarUsuario}><Save color="#fff" size={24} /></TouchableOpacity>
+               <View style={styles.modalActions}>
+                 <TouchableOpacity style={styles.btnCancel} onPress={() => setModalVisible(false)}><Text style={{color:'#64748b'}}>Cancelar</Text></TouchableOpacity>
+                 <TouchableOpacity style={styles.btnSave} onPress={salvar}><Text style={{color:'#fff', fontWeight:'bold'}}>Salvar</Text></TouchableOpacity>
+               </View>
             </View>
-          </View>
-        </View>
+         </View>
       </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  headerArea: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20 },
-  listTitle: { fontSize: 16, fontWeight: '800' },
-  btnNovo: { flexDirection: 'row', padding: 10, borderRadius: 8, alignItems: 'center' },
-  btnText: { color: '#fff', fontWeight: 'bold' },
-  card: { padding: 16, borderRadius: 16, marginBottom: 12, flexDirection: 'row', borderWidth: 1, elevation: 2 },
-  userName: { fontSize: 16, fontWeight: '900' },
-  badgeRole: { color: '#fff', fontSize: 10, fontWeight: 'bold', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, overflow: 'hidden', alignSelf: 'flex-start' },
-  btnAction: { padding: 10, backgroundColor: 'rgba(0,0,0,0.03)', borderRadius: 10 },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  modalContent: { padding: 25, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '90%' },
-  formTitle: { fontSize: 20, fontWeight: 'bold' },
-  input: { borderWidth: 1, borderRadius: 10, padding: 12, marginBottom: 12 },
-  label: { fontSize: 10, fontWeight: 'bold', marginBottom: 10, marginTop: 5, letterSpacing: 1 },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 15, gap: 8 },
-  chip: { padding: 10, borderRadius: 10, borderWidth: 1 },
-  chipSugestao: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 15, borderWidth: 1, marginRight: 8 },
-  modalActions: { flexDirection: 'row', marginTop: 10 },
-  btnSave: { padding: 15, borderRadius: 12, flex: 1, marginLeft: 10, alignItems: 'center' },
-  btnCancel: { padding: 15, borderRadius: 12, borderWidth: 1 }
+  container: { flex: 1, backgroundColor: '#f1f5f9', padding: 15 },
+  btnRow: { flexDirection: 'row', marginBottom: 15, maxHeight: 45 },
+  btnTop: { paddingHorizontal: 15, paddingVertical: 12, borderRadius: 8, marginRight: 10, justifyContent: 'center' },
+  btnTopText: { color: 'white', fontWeight: 'bold' },
+  card: { backgroundColor: '#fff', padding: 15, borderRadius: 10, marginBottom: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', elevation: 1 },
+  cardInfo: { flex: 1 },
+  usuario: { fontSize: 16, fontWeight: 'bold', color: '#0f172a' },
+  identity: { fontSize: 13, color: '#0284c7', marginTop: 4, fontWeight: 'bold' },
+  detalhes: { fontSize: 12, color: '#64748b', marginTop: 4 },
+  actions: { flexDirection: 'row' },
+  modalContainer: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 },
+  modalContent: { backgroundColor: '#fff', padding: 20, borderRadius: 15 },
+  modalTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 15 },
+  input: { borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 8, padding: 12, marginBottom: 10 },
+  selBox: { padding: 10, backgroundColor: '#f1f5f9', marginBottom: 5, borderRadius: 5 },
+  selActive: { backgroundColor: '#bae6fd', borderWidth: 1, borderColor: '#0284c7' },
+  modalActions: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 10, gap: 10 },
+  btnCancel: { padding: 10, borderRadius: 8, backgroundColor: '#e2e8f0' },
+  btnSave: { padding: 10, borderRadius: 8, backgroundColor: '#0284c7' }
 });

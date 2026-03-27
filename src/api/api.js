@@ -11,9 +11,9 @@ import io from 'socket.io-client';
 // const BASE_URL = 'http://localhost:3000';
 
 // OPÇÃO C: Se estiveres a usar o EXPO GO num TELEMÓVEL FÍSICO (Android ou iPhone)
-const BASE_URL = 'http://10.98.173.164:3000'; // Sem espaços!
+const BASE_URL = 'http://192.168.200.27:3000'; // Sem espaços!
 
-export const api = axios.create({
+const api = axios.create({
   baseURL: BASE_URL,
   timeout: 5000, 
 });
@@ -37,3 +37,7 @@ export const getSocket = () => {
   }
   return socket;
 };
+
+// 🔴 A MAGIA ACONTECE AQUI: Exportamos dos dois jeitos para não quebrar nenhuma tela!
+export { api }; // Para as telas que usam: import { api } from ...
+export default api;    // Para o contexto que usa: import api from ...

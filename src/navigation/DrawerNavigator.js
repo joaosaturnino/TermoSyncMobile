@@ -1,97 +1,58 @@
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { createDrawerNavigator } from '@react-navigation/drawer';
-import { setAudioModeAsync, useAudioPlayer } from 'expo-audio';
-import { Activity, Droplets, History, Leaf, Settings, Thermometer, Users, Wrench } from 'lucide-react-native';
-import { useContext, useEffect, useRef } from 'react';
-import Toast from 'react-native-toast-message';
+import { useContext } from 'react';
 
-import { api, getSocket } from '../api/api';
+import ChamadosScreen from '../screens/ChamadosScreen';
+import DashboardScreen from '../screens/DashboardScreen';
+import EquipamentosScreen from '../screens/EquipamentosScreen';
+import HistoricoChamadosScreen from '../screens/HistoricoChamadosScreen';
+import HistoricoScreen from '../screens/HistoricoScreen';
+import LojasScreen from '../screens/LojasScreen';
+import RelatoriosScreen from '../screens/RelatoriosScreen';
+import SensoresScreen from '../screens/SensoresScreen';
+import UsuariosScreen from '../screens/UsuariosScreen';
+
 import { AppContext } from '../context/AppContext';
 import CustomDrawer from './CustomDrawer';
 
-import DashboardScreen from '../screens/DashboardScreen';
-import EquipamentosScreen from '../screens/EquipamentosScreen';
-import HistoricoScreen from '../screens/HistoricoScreen';
-import RelatoriosScreen from '../screens/RelatoriosScreen';
-import SensoresScreen from '../screens/SensoresScreen';
-// 🔴 NOVAS TELAS
-import ChamadosScreen from '../screens/ChamadosScreen';
-import UsuariosScreen from '../screens/UsuariosScreen';
-
 const Drawer = createDrawerNavigator();
-const MotoresScreen = (props) => <SensoresScreen {...props} isTemp={true} />;
-const UmidadeScreen = (props) => <SensoresScreen {...props} isTemp={false} />;
-const ALERTA_SOUND = require('../assets/sounds/alert.mp3');
 
 export default function DrawerNavigator() {
-  const { theme, userRole } = useContext(AppContext);
-  const idsConhecidos = useRef(new Set()); 
-  const isFirstLoad = useRef(true); 
-  const player = useAudioPlayer(ALERTA_SOUND);
-
-  const tocarAlerta = async () => {
-    try {
-      await setAudioModeAsync({ playsInSilentMode: true });
-      player.seekTo(0); player.play();
-    } catch (error) { }
-  };
-
-  useEffect(() => {
-    const socket = getSocket();
-    const verificarNovosAlertas = async () => {
-      try {
-        const res = await api.get('/api/notificacoes');
-        const alertasAtuais = res.data;
-
-        if (isFirstLoad.current) {
-          idsConhecidos.current = new Set(alertasAtuais.map(n => n.id));
-          isFirstLoad.current = false; return;
-        }
-
-        alertasAtuais.forEach(notif => {
-          if (!idsConhecidos.current.has(notif.id)) {
-            tocarAlerta();
-            Toast.show({
-              type: 'alertaESG', text1: `🚨 ALERTA: ${notif.equipamento_nome}`, text2: notif.mensagem,
-              props: { tipo: notif.tipo_alerta }, position: 'top', topOffset: 55, visibilityTime: 5000
-            });
-          }
-        });
-        idsConhecidos.current = new Set(alertasAtuais.map(n => n.id));
-      } catch (error) { }
-    };
-
-    verificarNovosAlertas();
-    socket.on('atualizacao_dados', verificarNovosAlertas);
-    return () => socket.disconnect();
-  }, [player]);
+  const { userRole, notificacoes } = useContext(AppContext);
+  const totalNotifs = notificacoes.length;
 
   return (
     <Drawer.Navigator
       drawerContent={(props) => <CustomDrawer {...props} />}
       screenOptions={{
-        headerStyle: { backgroundColor: theme.primary },
+        headerStyle: { backgroundColor: '#0f172a' },
         headerTintColor: '#fff',
-        headerTitleAlign: 'center',
-        headerTitleStyle: { fontWeight: 'bold' },
-        drawerActiveBackgroundColor: theme.primary,
-        drawerActiveTintColor: '#fff',
-        drawerInactiveTintColor: theme.textMain,
-        drawerLabelStyle: { fontSize: 15, fontWeight: '600', marginLeft: -10 },
-        drawerItemStyle: { borderRadius: 8, paddingHorizontal: 5 },
-        sceneContainerStyle: { backgroundColor: theme.bg } 
+        drawerActiveBackgroundColor: 'rgba(56, 189, 248, 0.1)',
+        drawerActiveTintColor: '#0284c7',
+        drawerInactiveTintColor: '#475569',
+        drawerLabelStyle: { fontWeight: 'bold' }
       }}
     >
-      <Drawer.Screen name="Dashboard" component={DashboardScreen} options={{ title: 'Painel Central', drawerIcon: ({ color }) => <Activity color={color} size={22} /> }} />
-      <Drawer.Screen name="Motores" component={MotoresScreen} options={{ title: 'Monitorização Térmica', drawerIcon: ({ color }) => <Thermometer color={color} size={22} /> }} />
-      <Drawer.Screen name="Umidade" component={UmidadeScreen} options={{ title: 'Monitorização Humidade', drawerIcon: ({ color }) => <Droplets color={color} size={22} /> }} />
-      <Drawer.Screen name="Equipamentos" component={EquipamentosScreen} options={{ title: 'Metrologia & Instalações', drawerIcon: ({ color }) => <Settings color={color} size={22} /> }} />
-      <Drawer.Screen name="Relatorios" component={RelatoriosScreen} options={{ title: 'Sustentabilidade ESG', drawerIcon: ({ color }) => <Leaf color={color} size={22} /> }} />
-      <Drawer.Screen name="Historico" component={HistoricoScreen} options={{ title: 'Auditoria (Logs)', drawerIcon: ({ color }) => <History color={color} size={22} /> }} />
+      <Drawer.Screen name="Painel Central" component={DashboardScreen} 
+        options={{ 
+          drawerIcon: ({ color }) => <MaterialCommunityIcons name="view-dashboard" size={22} color={color} />,
+          drawerLabel: `Painel Central ${totalNotifs > 0 ? `(${totalNotifs})` : ''}`
+        }} 
+      />
+      <Drawer.Screen name="Monitorização Térmica" component={SensoresScreen} initialParams={{ tipoSensor: 'temperatura' }} options={{ drawerIcon: ({ color }) => <MaterialCommunityIcons name="thermometer" size={22} color={color} /> }} />
+      <Drawer.Screen name="Monitorização Humidade" component={SensoresScreen} initialParams={{ tipoSensor: 'umidade' }} options={{ drawerIcon: ({ color }) => <MaterialCommunityIcons name="water-percent" size={22} color={color} /> }} />
+      <Drawer.Screen name="Metrologia (Máquinas)" component={EquipamentosScreen} options={{ drawerIcon: ({ color }) => <MaterialCommunityIcons name="fridge" size={22} color={color} /> }} />
+      <Drawer.Screen name="Auditoria RDC (Logs)" component={HistoricoScreen} options={{ drawerIcon: ({ color }) => <MaterialCommunityIcons name="history" size={22} color={color} /> }} />
+      <Drawer.Screen name="Sustentabilidade ESG" component={RelatoriosScreen} options={{ drawerIcon: ({ color }) => <MaterialCommunityIcons name="leaf" size={22} color={color} /> }} />
       
-      {/* 🔴 NOVAS ABAS */}
-      <Drawer.Screen name="Chamados" component={ChamadosScreen} options={{ title: 'Chamados Técnicos', drawerIcon: ({ color }) => <Wrench color={color} size={22} /> }} />
+      <Drawer.Screen name="Chamados Técnicos" component={ChamadosScreen} options={{ drawerIcon: ({ color }) => <MaterialCommunityIcons name="tools" size={22} color={color} /> }} />
+      <Drawer.Screen name="Histórico de OS Antigas" component={HistoricoChamadosScreen} options={{ drawerIcon: ({ color }) => <MaterialCommunityIcons name="archive" size={22} color={color} /> }} />
+
       {userRole === 'ADMIN' && (
-        <Drawer.Screen name="Usuarios" component={UsuariosScreen} options={{ title: 'Gestão de Acessos', drawerIcon: ({ color }) => <Users color={color} size={22} /> }} />
+        <>
+          <Drawer.Screen name="Lojas e Unidades" component={LojasScreen} options={{ drawerIcon: ({ color }) => <MaterialCommunityIcons name="store" size={22} color={color} /> }} />
+          <Drawer.Screen name="Gestão de Acessos" component={UsuariosScreen} options={{ drawerIcon: ({ color }) => <MaterialCommunityIcons name="account-group" size={22} color={color} /> }} />
+        </>
       )}
     </Drawer.Navigator>
   );
