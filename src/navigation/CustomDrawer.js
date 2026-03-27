@@ -1,12 +1,29 @@
 import { Picker } from '@react-native-picker/picker';
 import { DrawerContentScrollView, DrawerItemList } from '@react-navigation/drawer';
 import { Activity, LogOut, MapPin, Moon, Sun, UserCheck } from 'lucide-react-native';
-import { useContext } from 'react';
+import { useContext, useEffect, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { api } from '../api/api';
 import { AppContext } from '../context/AppContext';
 
 export default function CustomDrawer(props) {
-  const { theme, isDarkMode, toggleTheme, logout, userRole, userFilial, filialAtiva, setFilialAtiva, listaFiliais } = useContext(AppContext);
+  // 🔴 1. Removemos a listaFiliais daqui
+  const { theme, isDarkMode, toggleTheme, logout, userRole, userFilial, filialAtiva, setFilialAtiva } = useContext(AppContext);
+  
+  // 🔴 2. Criamos um estado local para guardar as filiais
+  const [listaFiliais, setListaFiliais] = useState(['Todas']);
+
+  // 🔴 3. Vamos buscar as filiais à BD sempre que o menu é desenhado (Se não for Loja)
+  useEffect(() => {
+    if (userRole !== 'LOJA') {
+      api.get('/api/auxiliares/filiais')
+        .then(res => {
+          // Junta a opção "Todas" com as filiais que vieram da Base de Dados
+          setListaFiliais(['Todas', ...res.data]);
+        })
+        .catch(err => console.log('Erro ao carregar filiais no menu', err));
+    }
+  }, [userRole]);
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.bg }}>
@@ -22,13 +39,14 @@ export default function CustomDrawer(props) {
 
           <View style={styles.rbacContainer}>
             <View style={styles.rbacHeader}>
-              {userRole === 'ADMIN' ? <MapPin size={14} color={theme.primary} /> : <UserCheck size={14} color={theme.primary} />}
+              {/* 🔴 4. Atualizamos para incluir também a Manutenção (!== 'LOJA') */}
+              {userRole !== 'LOJA' ? <MapPin size={14} color={theme.primary} /> : <UserCheck size={14} color={theme.primary} />}
               <Text style={[styles.rbacTitle, { color: theme.primary }]}>
-                {userRole === 'ADMIN' ? 'REDE DE LOJAS' : 'ACESSO LOCAL'}
+                {userRole !== 'LOJA' ? 'REDE DE LOJAS' : 'ACESSO LOCAL'}
               </Text>
             </View>
 
-            {userRole === 'ADMIN' ? (
+            {userRole !== 'LOJA' ? (
               <View style={[styles.pickerBox, { borderColor: theme.border, backgroundColor: theme.card }]}>
                 <Picker
                   selectedValue={filialAtiva}
@@ -36,6 +54,7 @@ export default function CustomDrawer(props) {
                   style={{ color: theme.textMain, height: 45 }}
                   dropdownIconColor={theme.textMain}
                 >
+                  {/* Agora o .map() funciona sempre de forma segura */}
                   {listaFiliais.map(f => <Picker.Item key={f} label={f === 'Todas' ? 'Visão Global Integrada' : f} value={f} />)}
                 </Picker>
               </View>

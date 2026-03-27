@@ -1,36 +1,42 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createContext, useEffect, useState } from 'react';
 
-// Cores exatas do App.css da Web
-export const lightTheme = { primary: '#059669', secondary: '#10b981', bg: '#f8fafc', card: '#ffffff', textMain: '#0f172a', textMuted: '#64748b', danger: '#ef4444', dangerLight: '#fee2e2', success: '#10b981', warning: '#f59e0b', info: '#38bdf8', alertMech: '#f97316', border: '#e2e8f0', shadow: 'rgba(0, 0, 0, 0.05)' };
-export const darkTheme = { primary: '#059669', secondary: '#10b981', bg: '#0f172a', card: '#1e293b', textMain: '#f8fafc', textMuted: '#94a3b8', danger: '#ef4444', dangerLight: '#7f1d1d', success: '#10b981', warning: '#f59e0b', info: '#38bdf8', alertMech: '#ea580c', border: '#334155', shadow: 'rgba(0, 0, 0, 0.5)' };
-
 export const AppContext = createContext();
 
 export const AppProvider = ({ children, onLogout }) => {
-  const [isDarkMode, setIsDarkMode] = useState(false);
   const [userRole, setUserRole] = useState('LOJA');
   const [userFilial, setUserFilial] = useState('');
   const [filialAtiva, setFilialAtiva] = useState('Todas');
-  const [listaFiliais] = useState(['Todas', 'Loja Porto', 'Loja Lisboa', 'Loja Coimbra', 'Loja Faro', 'Loja Braga', 'Loja Aveiro', 'Loja Évora']);
-  
-  const theme = isDarkMode ? darkTheme : lightTheme;
+  const [isDarkMode, setIsDarkMode] = useState(false);
 
   useEffect(() => {
     carregarConfiguracoes();
   }, []);
 
   const carregarConfiguracoes = async () => {
-    const role = await AsyncStorage.getItem('userRole');
-    const filial = await AsyncStorage.getItem('userFilial');
-    const mode = await AsyncStorage.getItem('theme');
-    
-    if (role) setUserRole(role);
-    if (filial) { 
+    try {
+      const role = await AsyncStorage.getItem('userRole');
+      const filial = await AsyncStorage.getItem('userFilial');
+      const mode = await AsyncStorage.getItem('theme');
+      
+      if (role) setUserRole(role);
+      if (filial) { 
         setUserFilial(filial); 
-        setFilialAtiva(role === 'ADMIN' ? 'Todas' : filial); 
+        // 🔴 CORREÇÃO: Admin e Manutenção têm visão Global
+        setFilialAtiva(role !== 'LOJA' ? 'Todas' : filial); 
+      }
+      if (mode === 'dark') setIsDarkMode(true);
+    } catch (e) {
+      console.log('Erro ao carregar contexto', e);
     }
-    if (mode === 'dark') setIsDarkMode(true);
+  };
+
+  const logout = async () => {
+    await AsyncStorage.clear();
+    setUserRole('LOJA');
+    setUserFilial('');
+    setFilialAtiva('Todas');
+    if (onLogout) onLogout();
   };
 
   const toggleTheme = async () => {
@@ -39,13 +45,21 @@ export const AppProvider = ({ children, onLogout }) => {
     await AsyncStorage.setItem('theme', newMode ? 'dark' : 'light');
   };
 
-  const logout = async () => {
-    await AsyncStorage.clear();
-    onLogout();
+  const theme = {
+    bg: isDarkMode ? '#0f172a' : '#f8fafc',
+    card: isDarkMode ? '#1e293b' : '#ffffff',
+    textMain: isDarkMode ? '#f8fafc' : '#0f172a',
+    textMuted: isDarkMode ? '#94a3b8' : '#64748b',
+    border: isDarkMode ? '#334155' : '#e2e8f0',
+    primary: '#059669',
+    success: '#10b981',
+    danger: '#ef4444',
+    warning: '#f59e0b',
+    info: '#38bdf8'
   };
 
   return (
-    <AppContext.Provider value={{ theme, isDarkMode, toggleTheme, userRole, userFilial, filialAtiva, setFilialAtiva, listaFiliais, logout }}>
+    <AppContext.Provider value={{ userRole, userFilial, filialAtiva, setFilialAtiva, isDarkMode, toggleTheme, theme, logout }}>
       {children}
     </AppContext.Provider>
   );
