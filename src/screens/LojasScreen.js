@@ -1,64 +1,72 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useContext, useState } from 'react';
-import { Alert, FlatList, Modal, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import React, { useContext, useEffect, useState } from 'react';
+import { Alert, FlatList, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import api from '../api/api';
 import { AppContext } from '../context/AppContext';
 
 export default function LojasScreen() {
-  const { lojasCadastradas, carregarDadosBasicos } = useContext(AppContext);
+  const { theme, carregarDadosBasicos } = useContext(AppContext);
+  const [lojas, setLojas] = useState([]);
   const [modalVisible, setModalVisible] = useState(false);
-  const [form, setForm] = useState({ id: '', nome: '', endereco_loja: '', telefone_loja: '' });
+  
+  const [form, setForm] = useState({ id: '', filial: '', endereco_loja: '', telefone_loja: '' });
 
-  const salvar = async () => {
-    if (!form.nome) return Alert.alert("Erro", "Nome da Loja é obrigatório");
-    try {
-      if (form.id) {
-        await api.put(`/lojas/${form.id}`, form);
-      } else {
-        await api.post('/lojas', form);
-      }
-      setModalVisible(false);
-      carregarDadosBasicos();
-    } catch(e) { Alert.alert("Erro ao salvar loja."); }
+  useEffect(() => { carregarLojas(); }, []);
+
+  const carregarLojas = async () => {
+    try { const res = await api.get('/api/lojas'); setLojas(res.data); } catch(e) {}
   };
 
-  const deletar = (id) => {
-    Alert.alert('Remover Loja', 'Certeza? Apagará utilizadores e equipamentos desta filial.', [
+  const salvar = async () => {
+    if (!form.filial) return Alert.alert('Aviso', 'O nome da loja é obrigatório.');
+    try {
+      if (form.id) {
+        await api.put(`/api/lojas/${form.id}`, form);
+        Alert.alert('Sucesso', 'Loja atualizada. Os equipamentos foram sincronizados!');
+      } else {
+        await api.post('/api/cadastrar-loja', form);
+        Alert.alert('Sucesso', 'Nova Loja registada!');
+      }
+      setModalVisible(false); carregarLojas(); carregarDadosBasicos();
+    } catch(e) { Alert.alert('Erro', 'Falha ao guardar loja.'); }
+  };
+
+  const deletar = (id, nome) => {
+    Alert.alert('Aviso de Risco', `Apagar a loja "${nome}" vai ELIMINAR TODOS os equipamentos, utilizadores e históricos vinculados a ela. Continuar?`, [
       { text: 'Cancelar', style: 'cancel' },
-      { text: 'Apagar', style: 'destructive', onPress: async () => {
-          await api.delete(`/lojas/${id}`);
-          carregarDadosBasicos();
-      }}
+      { text: 'Sim, Apagar Tudo', style: 'destructive', onPress: async () => { await api.delete(`/api/lojas/${id}`); carregarLojas(); carregarDadosBasicos(); } }
     ]);
   };
 
   return (
-    <View style={styles.container}>
-      <TouchableOpacity style={styles.btnNova} onPress={() => { setForm({id:'', nome:'', endereco_loja:'', telefone_loja:''}); setModalVisible(true); }}>
-        <MaterialCommunityIcons name="store-plus" size={20} color="#fff" />
-        <Text style={{color:'#fff', fontWeight:'bold', marginLeft: 8}}>Nova Loja Física</Text>
-      </TouchableOpacity>
+    <View style={[styles.container, { backgroundColor: theme.bg }]}>
+      <View style={styles.header}>
+          <Text style={{ fontSize: 18, fontWeight: '900', color: theme.textMain }}>Unidades / Lojas</Text>
+          <TouchableOpacity style={[styles.btnNova, { backgroundColor: theme.primary }]} onPress={() => { setForm({ id: '', filial: '', endereco_loja: '', telefone_loja: '' }); setModalVisible(true); }}>
+            <MaterialCommunityIcons name="plus-circle" size={18} color="#fff" />
+            <Text style={styles.btnNovaText}>Nova Loja</Text>
+          </TouchableOpacity>
+      </View>
 
       <FlatList
-        data={lojasCadastradas}
+        data={lojas}
         keyExtractor={i => i.id.toString()}
         renderItem={({item}) => (
-          <View style={styles.card}>
-            <View style={styles.cardRow}>
-               <MaterialCommunityIcons name="store" size={24} color="#0284c7" />
-               <Text style={styles.cardTitle}>{item.nome}</Text>
-            </View>
-            <View style={styles.infoBox}>
-               <Text style={styles.info}><Text style={{fontWeight:'bold'}}>Endereço:</Text> {item.endereco || '-'}</Text>
-               <Text style={styles.info}><Text style={{fontWeight:'bold'}}>Telefone:</Text> {item.telefone || '-'}</Text>
-            </View>
-            <View style={styles.gestaoBox}>
-               <Text style={{color:'#047857', fontSize:13, fontWeight: 'bold'}}>Gerente: <Text style={{fontWeight: 'normal'}}>{item.nome_gerente || 'Não def.'}</Text></Text>
-               <Text style={{color:'#0369a1', fontSize:13, fontWeight: 'bold'}}>Coordenador: <Text style={{fontWeight: 'normal'}}>{item.nome_coordenador || 'Não def.'}</Text></Text>
-            </View>
-            <View style={styles.actions}>
-               <TouchableOpacity onPress={() => { setForm({id: item.id, nome: item.nome, endereco_loja: item.endereco, telefone_loja: item.telefone}); setModalVisible(true); }}><MaterialCommunityIcons name="pencil" size={22} color="#64748b" style={{marginRight:15}}/></TouchableOpacity>
-               <TouchableOpacity onPress={() => deletar(item.id)}><MaterialCommunityIcons name="delete" size={22} color="#ef4444"/></TouchableOpacity>
+          <View style={[styles.card, { backgroundColor: theme.card }]}>
+            <Text style={[styles.cardTitle, { color: theme.textMain }]}>{item.nome}</Text>
+            <Text style={{ color: theme.textMuted, fontSize: 13, marginTop: 4 }}><MaterialCommunityIcons name="map-marker" size={14}/> {item.endereco}</Text>
+            <Text style={{ color: theme.textMuted, fontSize: 13, marginTop: 2 }}><MaterialCommunityIcons name="phone" size={14}/> {item.telefone}</Text>
+
+            <View style={[styles.actions, { borderTopColor: theme.border }]}>
+              <TouchableOpacity style={[styles.actionBtn, {borderColor: theme.border}]} onPress={() => { 
+                setForm({ id: item.id, filial: item.nome, endereco_loja: item.endereco, telefone_loja: item.telefone }); 
+                setModalVisible(true); 
+              }}>
+                <MaterialCommunityIcons name="pencil" size={20} color={theme.primary}/>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.actionBtn, {borderColor: theme.border}]} onPress={() => deletar(item.id, item.nome)}>
+                <MaterialCommunityIcons name="delete" size={20} color={theme.danger}/>
+              </TouchableOpacity>
             </View>
           </View>
         )}
@@ -66,14 +74,23 @@ export default function LojasScreen() {
 
       <Modal visible={modalVisible} transparent animationType="slide">
          <View style={styles.modalContainer}>
-            <View style={styles.modalContent}>
-               <Text style={styles.modalTitle}>{form.id ? 'Editar Loja' : 'Cadastrar Loja'}</Text>
-               <TextInput style={styles.input} placeholder="Nome da Loja" value={form.nome} onChangeText={t => setForm({...form, nome: t})} editable={!form.id} />
-               <TextInput style={styles.input} placeholder="Endereço Completo" value={form.endereco_loja} onChangeText={t => setForm({...form, endereco_loja: t})} />
-               <TextInput style={styles.input} placeholder="Telefone Comercial" value={form.telefone_loja} onChangeText={t => setForm({...form, telefone_loja: t})} keyboardType="phone-pad" />
+            <View style={[styles.modalContent, { backgroundColor: theme.card, borderColor: theme.border }]}>
+               <Text style={[styles.modalTitle, { color: theme.textMain, marginBottom: 15 }]}>{form.id ? 'Editar Unidade' : 'Nova Unidade'}</Text>
+               <ScrollView style={{maxHeight: '80%'}}>
+                 
+                 <Text style={styles.label}>Nome Oficial da Loja / Filial</Text>
+                 <TextInput style={[styles.input, { color: theme.textMain, borderColor: theme.border }]} value={form.filial} onChangeText={t => setForm({...form, filial: t})} placeholder="Ex: Loja Lisboa Centro" />
+                 
+                 <Text style={styles.label}>Endereço Completo</Text>
+                 <TextInput style={[styles.input, { color: theme.textMain, borderColor: theme.border }]} value={form.endereco_loja} onChangeText={t => setForm({...form, endereco_loja: t})} placeholder="Ex: Rua Augusta, 123" />
+
+                 <Text style={styles.label}>Contato / Telefone</Text>
+                 <TextInput style={[styles.input, { color: theme.textMain, borderColor: theme.border }]} value={form.telefone_loja} onChangeText={t => setForm({...form, telefone_loja: t})} placeholder="Ex: +351 912 345 678" />
+
+               </ScrollView>
                <View style={styles.modalActions}>
-                 <TouchableOpacity style={styles.btnCancel} onPress={() => setModalVisible(false)}><Text style={{color:'#64748b'}}>Cancelar</Text></TouchableOpacity>
-                 <TouchableOpacity style={styles.btnSave} onPress={salvar}><Text style={{color:'#fff', fontWeight:'bold'}}>Salvar</Text></TouchableOpacity>
+                 <TouchableOpacity style={styles.btnCancel} onPress={() => setModalVisible(false)}><Text style={{color: theme.textMuted, fontWeight: 'bold'}}>Cancelar</Text></TouchableOpacity>
+                 <TouchableOpacity style={[styles.btnSave, {backgroundColor: theme.primary}]} onPress={salvar}><Text style={{color:'#fff', fontWeight:'bold'}}>Salvar Unidade</Text></TouchableOpacity>
                </View>
             </View>
          </View>
@@ -83,20 +100,20 @@ export default function LojasScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f1f5f9', padding: 15 },
-  btnNova: { backgroundColor: '#0284c7', flexDirection: 'row', padding: 15, borderRadius: 8, justifyContent: 'center', marginBottom: 15 },
-  card: { backgroundColor: '#fff', padding: 15, borderRadius: 10, marginBottom: 15, elevation: 2 },
-  cardRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
-  cardTitle: { fontSize: 18, fontWeight: 'bold', marginLeft: 10, color: '#0f172a' },
-  infoBox: { paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
-  info: { fontSize: 14, color: '#475569', marginBottom: 4 },
-  gestaoBox: { paddingTop: 10, gap: 4 },
-  actions: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 10 },
-  modalContainer: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 },
-  modalContent: { backgroundColor: '#fff', padding: 20, borderRadius: 15 },
-  modalTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 15 },
-  input: { borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 8, padding: 12, marginBottom: 10 },
-  modalActions: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 10, gap: 10 },
-  btnCancel: { padding: 10, borderRadius: 8, backgroundColor: '#e2e8f0' },
-  btnSave: { padding: 10, borderRadius: 8, backgroundColor: '#0284c7' }
+  container: { flex: 1, padding: 15 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
+  btnNova: { flexDirection: 'row', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, alignItems:'center' },
+  btnNovaText: { color: '#fff', fontWeight: 'bold', marginLeft: 6, fontSize: 13 },
+  card: { padding: 18, borderRadius: 12, marginBottom: 15, elevation: 2 },
+  cardTitle: { fontSize: 17, fontWeight: '900' },
+  actions: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 15, borderTopWidth: 1, paddingTop: 15, gap: 12 },
+  actionBtn: { padding: 8, borderWidth: 1, borderRadius: 8 },
+  modalContainer: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: 15 },
+  modalContent: { padding: 20, borderRadius: 16, borderWidth: 1 },
+  modalTitle: { fontSize: 18, fontWeight: '900' },
+  label: { fontSize: 12, fontWeight: 'bold', color: '#64748b', marginBottom: 6 },
+  input: { borderWidth: 1, borderRadius: 8, padding: 12, marginBottom: 10, fontSize: 14 },
+  modalActions: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 20, gap: 10, borderTopWidth: 1, borderColor: 'rgba(0,0,0,0.1)', paddingTop: 15 },
+  btnCancel: { padding: 12 },
+  btnSave: { paddingVertical: 12, paddingHorizontal: 16, borderRadius: 8 }
 });

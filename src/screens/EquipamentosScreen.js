@@ -1,334 +1,246 @@
-import {
-  AlertTriangle,
-  ClipboardCheck,
-  Edit,
-  PlusCircle,
-  Save,
-  ShieldCheck,
-  Thermometer,
-  Trash2,
-  X
-} from 'lucide-react-native';
-import React, { useCallback, useContext, useEffect, useState } from 'react';
-import {
-  Alert,
-  FlatList,
-  Modal,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View
-} from 'react-native';
-import { api, getSocket } from '../api/api';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import React, { useContext, useState } from 'react';
+import { Alert, FlatList, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import api from '../api/api';
 import { AppContext } from '../context/AppContext';
 
-const EquipamentoCard = React.memo(({ item, onDelete, onEdit, theme }) => {
-  const diasCalib = item.data_calibracao ? Math.floor((Date.now() - new Date(item.data_calibracao).getTime()) / (1000 * 60 * 60 * 24)) : 0;
-  const calibCritica = diasCalib > 365;
-
-  const statusColor = item.em_degelo ? '#38bdf8' : (item.motor_ligado ? '#10b981' : '#ef4444');
-
-  return (
-    <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
-      <View style={styles.cardInfo}>
-        <View style={styles.badgeRow}>
-          <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
-          <Text style={[styles.badgeFilial, { backgroundColor: theme.bg, color: theme.primary }]}>{String(item.filial || '').toUpperCase()}</Text>
-          <Text style={[styles.badgeSetor, { backgroundColor: theme.border, color: theme.textMuted }]}>{item.setor}</Text>
-        </View>
-        <Text style={[styles.equipNome, { color: theme.textMain }]}>{item.nome}</Text>
-        <Text style={[styles.subText, { color: theme.textMuted }]}>{item.tipo}</Text>
-        <View style={styles.divider} />
-        <View style={styles.metrologiaGrid}>
-          <View style={styles.metrologiaItem}>
-             <View style={styles.labelRow}>
-                {calibCritica ? <AlertTriangle size={14} color="#ef4444" /> : <ClipboardCheck size={14} color="#10b981" />}
-                <Text style={[styles.metrologiaLabel, { color: calibCritica ? '#ef4444' : '#10b981' }]}> CALIBRAÇÃO</Text>
-             </View>
-             <Text style={[styles.metrologiaValue, { color: theme.textMain }]}>Há {diasCalib} dias</Text>
-          </View>
-          <View style={styles.metrologiaItem}>
-             <View style={styles.labelRow}>
-                <Thermometer size={14} color={theme.textMuted} />
-                <Text style={[styles.metrologiaLabel, { color: theme.textMuted }]}> LIMITE SLA</Text>
-             </View>
-             <Text style={[styles.metrologiaValue, { color: theme.textMain }]}>{item.temp_min}°C a {item.temp_max}°C</Text>
-          </View>
-        </View>
-      </View>
-      <View style={styles.actionColumn}>
-        <TouchableOpacity style={styles.btnAction} onPress={() => onEdit(item)}>
-          <Edit color={theme.primary} size={20} />
-        </TouchableOpacity>
-        <TouchableOpacity style={[styles.btnAction, { marginTop: 10 }]} onPress={() => onDelete(item.id, item.nome)}>
-          <Trash2 color="#ef4444" size={20} />
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-});
-
 export default function EquipamentosScreen() {
-  const { filialAtiva, theme, userRole, userFilial } = useContext(AppContext);
-  const [equipamentos, setEquipamentos] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  const { equipamentos, userRole, userFilial, filiaisDb, theme, carregarDadosBasicos, isOffline } = useContext(AppContext);
   const [modalVisible, setModalVisible] = useState(false);
-  const [editMode, setEditMode] = useState(false);
-
-  // 🔴 FALLBACKS ADICIONADOS PARA EVITAR O ERRO 'map of undefined'
-  const [filiaisDb, setFiliaisDb] = useState([]);
-  const [setoresDb, setSetoresDb] = useState([]);
-
-  const formInicial = {
-    nome: '', filial: userRole === 'LOJA' ? userFilial : '', setor: '', tipo: '', 
-    temp_min: '', temp_max: '', umidade_min: '', umidade_max: '', 
-    intervalo_degelo: '6', duracao_degelo: '30', data_calibracao: new Date().toISOString().split('T')[0]
-  };
-
-  const [form, setForm] = useState(formInicial);
   
-  // Listas fixas caso a API falhe
-  const setores = ['Farmácia', 'Açougue', 'Padaria', 'Frios', 'FLV', 'Congelados', 'Rotisseria', 'Geral'];
-  const tipos = ['Câmara Frigorífica', 'Ilha de Congelados', 'Balcão Refrigerado Aberto', 'Balcão Refrigerado com Porta', 'Arca Horizontal'];
-
-  const carregarDados = useCallback(async () => {
-    try {
-      const [resEq, resFiliais, resSetores] = await Promise.all([
-        api.get('/api/equipamentos'),
-        api.get('/api/auxiliares/filiais').catch(() => ({ data: [] })),
-        api.get('/api/auxiliares/setores').catch(() => ({ data: [] }))
-      ]);
-      
-      // 🔴 GARANTIR QUE NUNCA É UNDEFINED MESMO SE A API DEVOLVER NULO
-      setEquipamentos(resEq.data || []);
-      setFiliaisDb((resFiliais.data || []).filter(f => f !== 'Todas'));
-      setSetoresDb(resSetores.data || []);
-      
-    } catch (error) { 
-      console.log('Erro ao carregar equipamentos', error); 
-    } finally { 
-      setLoading(false); 
-      setRefreshing(false); 
-    }
-  }, []);
-
-  useEffect(() => { 
-    carregarDados(); 
-    const socket = getSocket();
-    socket.on('atualizacao_dados', () => carregarDados());
-    return () => socket.disconnect();
-  }, [carregarDados]);
+  const formInicial = { 
+    id: '', 
+    nome: '', 
+    tipo: '', 
+    temp_min: '', 
+    temp_max: '', 
+    umidade_min: '', 
+    umidade_max: '', 
+    intervalo_degelo: '', 
+    duracao_degelo: '30', 
+    setor: '', 
+    filial: userRole === 'LOJA' ? userFilial : '', 
+    data_calibracao: new Date().toISOString().split('T')[0] 
+  };
+  const [form, setForm] = useState({ ...formInicial });
 
   const aplicarNormaANVISA = () => {
-    if (!form.setor || !form.tipo) return Alert.alert('Atenção', 'Selecione Setor e Tipo primeiro.');
+    if (!form.setor || !form.tipo) return Alert.alert('Aviso', 'Preencha o Setor Comercial e o Tipo de Refrigeração primeiro.');
     let tMin = '', tMax = '', uMin = '', uMax = '';
-    if (form.setor === 'Farmácia' || form.setor === 'Farmácia / Vacinas') {
-      if (form.tipo.includes('Congelados')) { tMin = '-25'; tMax = '-15'; uMin = '35'; uMax = '60'; } 
-      else { tMin = '2'; tMax = '8'; uMin = '35'; uMax = '65'; }
+    const setorLower = form.setor.toLowerCase();
+    
+    if (setorLower.includes('farmácia') || setorLower.includes('vacina')) {
+      if (form.tipo.includes('Congelados')) { tMin = -25; tMax = -15; uMin = 35; uMax = 60; } else { tMin = 2; tMax = 8; uMin = 35; uMax = 65; }
     } else {
-      if (form.tipo.includes('Congelados') || form.tipo.includes('Arca')) { tMin = '-24'; tMax = '-18'; uMin = '60'; uMax = '80'; } 
-      else if (form.setor === 'Açougue') { tMin = '0'; tMax = '4'; uMin = '85'; uMax = '95'; } 
-      else if (form.setor === 'FLV') { tMin = '8'; tMax = '12'; uMin = '85'; uMax = '95'; } 
-      else { tMin = '0'; tMax = '8'; uMin = '60'; uMax = '85'; }
+      if (form.tipo.includes('Congelados') || form.tipo.includes('Arca')) { tMin = -24; tMax = -18; uMin = 60; uMax = 80; } 
+      else if (setorLower.includes('açougue')) { tMin = 0; tMax = 4; uMin = 85; uMax = 95; } 
+      else if (setorLower.includes('flv')) { tMin = 8; tMax = 12; uMin = 85; uMax = 95; } 
+      else { tMin = 0; tMax = 8; uMin = 60; uMax = 85; }
     }
-    setForm(prev => ({ ...prev, temp_min: tMin, temp_max: tMax, umidade_min: uMin, umidade_max: uMax }));
+    
+    setForm(prev => ({ 
+      ...prev, 
+      temp_min: String(tMin), 
+      temp_max: String(tMax), 
+      umidade_min: String(uMin), 
+      umidade_max: String(uMax), 
+      intervalo_degelo: '6', 
+      duracao_degelo: '30' 
+    }));
+    Alert.alert('Sucesso', 'Regulamentação e SLAs Físicos aplicados ao formulário!');
   };
 
-  const salvarEquipamento = async () => {
-    if (!form.nome || !form.filial || !form.setor || !form.tipo) return Alert.alert('Erro', 'Preencha os campos obrigatórios (Nome, Filial, Setor e Tipo).');
+  const salvar = async () => {
+    if (isOffline) return Alert.alert('Aviso', 'Ação bloqueada enquanto estiver offline.');
+    if (!form.nome || !form.temp_min || !form.temp_max || !form.tipo || !form.data_calibracao) {
+        return Alert.alert('Aviso', 'Preencha todos os campos obrigatórios (Identificador, Tipo, Data de Calibração, Temp Mín e Temp Máx).');
+    }
+    
     try {
-      if (editMode) { 
-        await api.put(`/api/equipamentos/${form.id}/edit`, form); 
-      } else { 
-        await api.post('/api/equipamentos', form); 
-      }
+      const payload = { ...form, filial: userRole === 'LOJA' ? userFilial : form.filial };
+      if (form.id) await api.put(`/api/equipamentos/${form.id}/edit`, payload);
+      else await api.post('/api/equipamentos', payload);
+      
       setModalVisible(false);
-      carregarDados();
-    } catch (error) { 
-      Alert.alert('Erro', 'Falha na operação de gravação.'); 
-    }
+      carregarDadosBasicos();
+      Alert.alert('Sucesso', form.id ? 'Perfil do equipamento atualizado.' : 'Hardware registado com sucesso.');
+    } catch(e) { Alert.alert('Erro', 'Falha ao comunicar com o servidor.'); }
   };
 
-  const confirmarExclusao = useCallback((id, nome) => {
-    Alert.alert('Remover Máquina', `Remover "${nome}" permanentemente?`, [
+  const deletar = (id, nome) => {
+    if (isOffline) return Alert.alert('Aviso', 'Ação bloqueada enquanto estiver offline.');
+    Alert.alert('Remover Máquina', `Deseja remover "${nome}" permanentemente do sistema?`, [
       { text: 'Cancelar', style: 'cancel' },
-      { text: 'Remover', style: 'destructive', onPress: () => api.delete(`/api/equipamentos/${id}`).then(carregarDados) }
+      { text: 'Apagar', style: 'destructive', onPress: async () => { 
+          try { await api.delete(`/api/equipamentos/${id}`); carregarDadosBasicos(); } 
+          catch (e) { Alert.alert('Erro', 'Falha ao apagar registo.'); }
+      }}
     ]);
-  }, [carregarDados]);
+  };
 
-  const handleEdit = useCallback((i) => {
-    setForm({...i, data_calibracao: i.data_calibracao ? i.data_calibracao.split('T')[0] : ''}); 
-    setEditMode(true); 
-    setModalVisible(true);
-  }, []);
-
-  const renderItem = useCallback(({ item }) => (
-    <EquipamentoCard item={item} onDelete={confirmarExclusao} onEdit={handleEdit} theme={theme} />
-  ), [theme, confirmarExclusao, handleEdit]);
-
-  // 🔴 GARANTIR QUE A VARIÁVEL EQUIPAMENTOS É UM ARRAY ANTES DE FILTRAR
-  const equipamentosSeguros = Array.isArray(equipamentos) ? equipamentos : [];
-  const filtrados = filialAtiva === 'Todas' ? equipamentosSeguros : equipamentosSeguros.filter(eq => eq.filial === filialAtiva);
+  const tiposOpcoes = ["Câmara Frigorífica", "Ilha de Congelados", "Balcão Refrigerado Aberto"];
 
   return (
     <View style={[styles.container, { backgroundColor: theme.bg }]}>
-      <View style={styles.headerArea}>
-        <Text style={[styles.listTitle, { color: theme.textMain }]}>Metrologia & Instalações ({filtrados.length})</Text>
-        <TouchableOpacity style={[styles.btnNovo, { backgroundColor: theme.primary }]} onPress={() => { setForm(formInicial); setEditMode(false); setModalVisible(true); }}>
-          <PlusCircle color="#fff" size={20} /><Text style={styles.btnText}> Novo</Text>
-        </TouchableOpacity>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 }}>
+          <Text style={{ fontSize: 18, fontWeight: '900', color: theme.textMain }}>Metrologia IoT</Text>
+          <TouchableOpacity style={[styles.btnNova, { backgroundColor: theme.primary }]} onPress={() => { setForm({...formInicial, filial: userRole === 'LOJA' ? userFilial : ''}); setModalVisible(true); }}>
+            <MaterialCommunityIcons name="plus-circle" size={18} color="#fff" />
+            <Text style={styles.btnNovaText}>Novo Sensor</Text>
+          </TouchableOpacity>
       </View>
 
       <FlatList
-        data={filtrados}
-        keyExtractor={(item) => String(item.id)}
-        renderItem={renderItem}
-        contentContainerStyle={{ padding: 16 }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); carregarDados(); }} colors={[theme.primary]} />}
-        initialNumToRender={8}           
-        maxToRenderPerBatch={8}          
-        windowSize={5}                   
-        removeClippedSubviews={true}     
-        updateCellsBatchingPeriod={50}   
+        data={equipamentos}
+        keyExtractor={i => i.id.toString()}
+        renderItem={({item}) => {
+          const diasCalib = item.data_calibracao ? Math.floor((Date.now() - new Date(item.data_calibracao).getTime()) / (1000 * 60 * 60 * 24)) : 0;
+          const calibCritica = diasCalib > 365;
+
+          return (
+            <View style={[styles.card, { backgroundColor: theme.card }]}>
+              <View style={styles.cardTop}>
+                <View style={{flexDirection:'row', alignItems:'center', flex: 1}}>
+                  <View style={[styles.dot, {backgroundColor: item.em_degelo ? theme.info : (item.motor_ligado ? theme.success : theme.danger)}]} />
+                  <Text style={[styles.cardTitle, { color: theme.textMain }]} numberOfLines={1}>{item.nome}</Text>
+                </View>
+                <Text style={{ fontSize: 11, fontWeight: 'bold', color: theme.textMuted, marginLeft: 10 }}>{item.filial}</Text>
+              </View>
+              <Text style={[styles.subText, { color: theme.textMuted }]}>{item.tipo} | {item.setor}</Text>
+              
+              <View style={styles.infoRow}><MaterialCommunityIcons name="thermometer" size={16} color={theme.textMuted}/><Text style={{ color: theme.textMain, fontSize: 13, fontWeight: 'bold' }}> SLA Físico: {item.temp_min}°C a {item.temp_max}°C</Text></View>
+              <View style={styles.infoRow}><MaterialCommunityIcons name="water-percent" size={16} color={theme.textMuted}/><Text style={{ color: theme.textMain, fontSize: 13 }}> Humidade: {item.umidade_min || 0}% a {item.umidade_max || 0}%</Text></View>
+              <View style={styles.infoRow}><MaterialCommunityIcons name="certificate" size={16} color={calibCritica ? theme.danger : theme.success}/><Text style={{color: calibCritica ? theme.danger : theme.success, fontSize: 13, fontWeight:'bold'}}> Certificado há {diasCalib} dias</Text></View>
+
+              <View style={[styles.actions, { borderTopColor: theme.border }]}>
+                <TouchableOpacity style={[styles.actionBtn, {borderColor: theme.border}]} onPress={() => { 
+                  setForm({ 
+                    ...item, 
+                    temp_min: String(item.temp_min), 
+                    temp_max: String(item.temp_max), 
+                    umidade_min: String(item.umidade_min || ''), 
+                    umidade_max: String(item.umidade_max || ''), 
+                    intervalo_degelo: String(item.intervalo_degelo), 
+                    duracao_degelo: String(item.duracao_degelo), 
+                    data_calibracao: item.data_calibracao ? item.data_calibracao.split('T')[0] : '' 
+                  }); 
+                  setModalVisible(true); 
+                }}>
+                  <MaterialCommunityIcons name="pencil" size={20} color={theme.primary}/>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.actionBtn, {borderColor: theme.border}]} onPress={() => deletar(item.id, item.nome)}>
+                  <MaterialCommunityIcons name="delete" size={20} color={theme.danger}/>
+                </TouchableOpacity>
+              </View>
+            </View>
+          );
+        }}
       />
 
-      <Modal visible={modalVisible} animationType="slide" transparent={true}>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: theme.card }]}>
-            <ScrollView showsVerticalScrollIndicator={false}>
-              <View style={styles.modalHeader}>
-                <Text style={[styles.formTitle, { color: theme.textMain }]}>{editMode ? 'Editar Ativo' : 'Novo Sensor IoT'}</Text>
-                <TouchableOpacity onPress={aplicarNormaANVISA} style={styles.btnNorma}><ShieldCheck size={22} color={theme.info} /></TouchableOpacity>
-              </View>
+      <Modal visible={modalVisible} transparent animationType="slide">
+         <View style={styles.modalContainer}>
+            <View style={[styles.modalContent, { backgroundColor: theme.card, borderColor: theme.border, borderWidth: 1 }]}>
+               
+               <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom:15, borderBottomWidth: 1, borderBottomColor: theme.border, paddingBottom: 10}}>
+                 <Text style={[styles.modalTitle, { color: theme.textMain }]}>{form.id ? 'Editar Máquina' : 'Registo IoT'}</Text>
+                 <TouchableOpacity onPress={aplicarNormaANVISA} style={styles.btnAnvisa}>
+                    <MaterialCommunityIcons name="shield-check" size={16} color={theme.info}/>
+                    <Text style={{color: theme.info, fontSize:11, fontWeight:'bold', marginLeft:4}}>Padrão Legal</Text>
+                 </TouchableOpacity>
+               </View>
 
-              <Text style={[styles.label, { color: theme.textMain }]}>IDENTIFICADOR</Text>
-              <TextInput style={[styles.input, { borderColor: theme.border, color: theme.textMain }]} placeholder="Identificador" placeholderTextColor={theme.textMuted} value={form.nome} onChangeText={(t) => setForm({...form, nome: t})} />
-              
-              <Text style={[styles.label, { color: theme.textMain }]}>FILIAL / LOJA</Text>
-              <TextInput style={[styles.input, { borderColor: theme.border, color: theme.textMain, backgroundColor: userRole === 'LOJA' ? 'rgba(0,0,0,0.05)' : 'transparent' }]} value={form.filial} onChangeText={(t) => setForm({...form, filial: t})} editable={userRole !== 'LOJA'} placeholder="Escreva a loja..." placeholderTextColor={theme.textMuted} />
-              
-              {/* 🔴 CHIPS DE FILIAL: Verifica se filiaisDb tem dados e se não é undefined */}
-              {userRole !== 'LOJA' && Array.isArray(filiaisDb) && filiaisDb.length > 0 && (
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 15 }}>
-                  {filiaisDb.map(f => (
-                    <TouchableOpacity key={f} onPress={() => setForm({...form, filial: f})} style={[styles.chipSugestao, { borderColor: theme.border }, form.filial === f && { backgroundColor: theme.primary }]}>
-                      <Text style={{ fontSize: 11, color: form.filial === f ? '#fff' : theme.textMuted, fontWeight: form.filial === f ? 'bold' : 'normal' }}>{f}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              )}
+               <ScrollView style={{maxHeight: '75%'}} showsVerticalScrollIndicator={false}>
+                 
+                 <Text style={styles.label}>Identificador da Máquina</Text>
+                 <TextInput style={[styles.input, { color: theme.textMain, borderColor: theme.border, backgroundColor: theme.bg }]} value={form.nome} onChangeText={t => setForm({...form, nome: t})} placeholder="Ex: Câmara de Carnes" placeholderTextColor={theme.textMuted} />
+                 
+                 <Text style={styles.label}>Filial / Loja Física</Text>
+                 {userRole === 'LOJA' ? ( <TextInput style={[styles.input, { backgroundColor: theme.bg, color: theme.textMain, borderColor: theme.border }]} value={form.filial} editable={false} /> ) : (
+                   <ScrollView horizontal style={{marginBottom:15}} showsHorizontalScrollIndicator={false}>
+                     {filiaisDb?.map(f => <TouchableOpacity key={f} onPress={()=>setForm({...form, filial: f})} style={[styles.chip, form.filial === f && { backgroundColor: theme.primary, borderColor: theme.primary }]}><Text style={{color: form.filial===f?'white':theme.textMuted, fontWeight: 'bold'}}>{f}</Text></TouchableOpacity>)}
+                   </ScrollView>
+                 )}
+                 
+                 <Text style={styles.label}>Setor Comercial</Text>
+                 <TextInput style={[styles.input, { color: theme.textMain, borderColor: theme.border, backgroundColor: theme.bg }]} value={form.setor} onChangeText={t => setForm({...form, setor: t})} placeholder="Ex: Açougue" placeholderTextColor={theme.textMuted} />
 
-              <Text style={[styles.label, { color: theme.textMain }]}>SETOR COMERCIAL</Text>
-              <TextInput style={[styles.input, { borderColor: theme.border, color: theme.textMain }]} value={form.setor} onChangeText={(t) => setForm({...form, setor: t})} placeholder="Escreva o setor..." placeholderTextColor={theme.textMuted} />
-              
-              {/* 🔴 CHIPS DE SETORES: Mistura os dados do SQL com a lista fixa para garantir opções */}
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 15 }}>
-                {Array.from(new Set([...setores, ...(Array.isArray(setoresDb) ? setoresDb : [])])).map(s => (
-                  <TouchableOpacity key={s} onPress={() => setForm({...form, setor: s})} style={[styles.chipSugestao, { borderColor: theme.border }, form.setor === s && { backgroundColor: theme.primary }]}>
-                    <Text style={{ fontSize: 11, color: form.setor === s ? '#fff' : theme.textMuted, fontWeight: form.setor === s ? 'bold' : 'normal' }}>{s}</Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
+                 <Text style={styles.label}>Tipo de Refrigeração</Text>
+                 <View style={{flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 15}}>
+                    {tiposOpcoes.map(tipo => (
+                        <TouchableOpacity key={tipo} onPress={() => setForm({...form, tipo})} style={[styles.chipTipo, { borderColor: theme.border }, form.tipo === tipo && { backgroundColor: theme.textMain, borderColor: theme.textMain }]}>
+                            <Text style={{ color: form.tipo === tipo ? theme.bg : theme.textMuted, fontSize: 12, fontWeight: 'bold' }}>{tipo}</Text>
+                        </TouchableOpacity>
+                    ))}
+                 </View>
 
-              <Text style={[styles.label, { color: theme.textMain }]}>TIPO DE MÁQUINA</Text>
-              <TextInput style={[styles.input, { borderColor: theme.border, color: theme.textMain }]} value={form.tipo} onChangeText={(t) => setForm({ ...form, tipo: t })} placeholder="Escreva o tipo..." placeholderTextColor={theme.textMuted} />
-              
-              {/* 🔴 CHIPS DE TIPO */}
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 15 }}>
-                {tipos.map(t => (
-                  <TouchableOpacity key={t} onPress={() => setForm({...form, tipo: t})} style={[styles.chipSugestao, { borderColor: theme.border }, form.tipo === t && { backgroundColor: theme.info }]}>
-                    <Text style={{ fontSize: 11, color: form.tipo === t ? '#fff' : theme.textMuted, fontWeight: form.tipo === t ? 'bold' : 'normal' }}>{t}</Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
+                 <Text style={styles.label}>Data de Calibração (YYYY-MM-DD)</Text>
+                 <TextInput style={[styles.input, { color: theme.textMain, borderColor: theme.border, backgroundColor: theme.bg }]} value={form.data_calibracao} onChangeText={t => setForm({...form, data_calibracao: t})} placeholder="Ex: 2025-01-20" placeholderTextColor={theme.textMuted} />
+                 
+                 <Text style={styles.label}>Degelo Automático (Horas)</Text>
+                 <TextInput style={[styles.input, { color: theme.textMain, borderColor: theme.border, backgroundColor: theme.bg }]} keyboardType="numeric" value={form.intervalo_degelo} onChangeText={t => setForm({...form, intervalo_degelo: t})} placeholder="Ex: 6" placeholderTextColor={theme.textMuted} />
 
-              <Text style={[styles.label, { color: theme.textMain }]}>METROLOGIA / SLA / DEGELO</Text>
-              <TextInput style={[styles.input, { borderColor: theme.border, color: theme.textMain }]} placeholder="Data Calibração (AAAA-MM-DD)" placeholderTextColor={theme.textMuted} value={form.data_calibracao} onChangeText={(t) => setForm({...form, data_calibracao: t})} />
-              
-              <View style={styles.row}>
-                <View style={styles.half}>
-                  <Text style={[styles.label, { color: theme.textMain, marginTop: 0 }]}>MÍN °C</Text>
-                  <TextInput style={[styles.input, { borderColor: theme.border, color: theme.textMain }]} value={String(form.temp_min)} onChangeText={(t) => setForm({...form, temp_min: t})} keyboardType="numeric" />
-                </View>
-                <View style={styles.half}>
-                  <Text style={[styles.label, { color: theme.textMain, marginTop: 0 }]}>MÁX °C</Text>
-                  <TextInput style={[styles.input, { borderColor: theme.border, color: theme.textMain }]} value={String(form.temp_max)} onChangeText={(t) => setForm({...form, temp_max: t})} keyboardType="numeric" />
-                </View>
-              </View>
-              
-              <View style={styles.row}>
-                <View style={styles.half}>
-                  <Text style={[styles.label, { color: theme.textMain, marginTop: 0 }]}>UR% MÍN</Text>
-                  <TextInput style={[styles.input, { borderColor: theme.border, color: theme.textMain }]} value={String(form.umidade_min || '')} onChangeText={(t) => setForm({...form, umidade_min: t})} keyboardType="numeric" />
-                </View>
-                <View style={styles.half}>
-                  <Text style={[styles.label, { color: theme.textMain, marginTop: 0 }]}>UR% MÁX</Text>
-                  <TextInput style={[styles.input, { borderColor: theme.border, color: theme.textMain }]} value={String(form.umidade_max || '')} onChangeText={(t) => setForm({...form, umidade_max: t})} keyboardType="numeric" />
-                </View>
-              </View>
-              
-              <View style={styles.row}>
-                <View style={styles.half}>
-                  <Text style={[styles.label, { color: theme.textMain, marginTop: 0 }]}>DEGELO (Horas)</Text>
-                  <TextInput style={[styles.input, { borderColor: theme.border, color: theme.textMain }]} value={String(form.intervalo_degelo)} onChangeText={(t) => setForm({...form, intervalo_degelo: t})} keyboardType="numeric" />
-                </View>
-                <View style={styles.half}>
-                  <Text style={[styles.label, { color: theme.textMain, marginTop: 0 }]}>DEGELO (Minutos)</Text>
-                  <TextInput style={[styles.input, { borderColor: theme.border, color: theme.textMain }]} value={String(form.duracao_degelo)} onChangeText={(t) => setForm({...form, duracao_degelo: t})} keyboardType="numeric" />
-                </View>
-              </View>
+                 <View style={{flexDirection:'row', justifyContent:'space-between'}}>
+                    <View style={{width:'48%'}}>
+                      <Text style={styles.label}>Temp Mín (°C)</Text>
+                      <TextInput style={[styles.input, { color: theme.textMain, borderColor: theme.border, backgroundColor: theme.bg }]} keyboardType="numeric" value={form.temp_min} onChangeText={t => setForm({...form, temp_min: t})} placeholder="Ex: 2" placeholderTextColor={theme.textMuted} />
+                    </View>
+                    <View style={{width:'48%'}}>
+                      <Text style={styles.label}>Temp Máx (°C)</Text>
+                      <TextInput style={[styles.input, { color: theme.textMain, borderColor: theme.border, backgroundColor: theme.bg }]} keyboardType="numeric" value={form.temp_max} onChangeText={t => setForm({...form, temp_max: t})} placeholder="Ex: 8" placeholderTextColor={theme.textMuted} />
+                    </View>
+                 </View>
 
-              <View style={{height: 50}} />
-            </ScrollView>
+                 <View style={{flexDirection:'row', justifyContent:'space-between'}}>
+                    <View style={{width:'48%'}}>
+                      <Text style={styles.label}>Humidade Mín (%)</Text>
+                      <TextInput style={[styles.input, { color: theme.textMain, borderColor: theme.border, backgroundColor: theme.bg }]} keyboardType="numeric" value={form.umidade_min} onChangeText={t => setForm({...form, umidade_min: t})} placeholder="Ex: 40" placeholderTextColor={theme.textMuted} />
+                    </View>
+                    <View style={{width:'48%'}}>
+                      <Text style={styles.label}>Humidade Máx (%)</Text>
+                      <TextInput style={[styles.input, { color: theme.textMain, borderColor: theme.border, backgroundColor: theme.bg }]} keyboardType="numeric" value={form.umidade_max} onChangeText={t => setForm({...form, umidade_max: t})} placeholder="Ex: 60" placeholderTextColor={theme.textMuted} />
+                    </View>
+                 </View>
 
-            <View style={styles.modalActions}>
-              <TouchableOpacity style={[styles.btnCancel, { borderColor: theme.border }]} onPress={() => setModalVisible(false)}><X color={theme.textMuted} size={24} /></TouchableOpacity>
-              <TouchableOpacity style={[styles.btnSave, { backgroundColor: theme.primary }]} onPress={salvarEquipamento}><Save color="#fff" size={24} /></TouchableOpacity>
+               </ScrollView>
+
+               <View style={styles.modalActions}>
+                 <TouchableOpacity style={styles.btnCancel} onPress={() => setModalVisible(false)}>
+                   <Text style={{color: theme.textMuted, fontWeight: 'bold'}}>Cancelar</Text>
+                 </TouchableOpacity>
+                 <TouchableOpacity style={[styles.btnSave, {backgroundColor: theme.primary}]} onPress={salvar}>
+                   <MaterialCommunityIcons name="content-save" size={18} color="#fff" style={{marginRight: 6}}/> 
+                   <Text style={{color:'#fff', fontWeight:'bold'}}>Salvar Perfil</Text>
+                 </TouchableOpacity>
+               </View>
             </View>
-          </View>
-        </View>
+         </View>
       </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  headerArea: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20 },
-  listTitle: { fontSize: 16, fontWeight: '800' },
-  btnNovo: { flexDirection: 'row', padding: 10, borderRadius: 8, alignItems: 'center' },
-  btnText: { color: '#fff', fontWeight: 'bold' },
-  card: { padding: 15, borderRadius: 12, marginBottom: 12, borderWidth: 1, flexDirection: 'row' },
-  cardTitle: { fontSize: 16, fontWeight: 'bold', marginBottom: 5 },
-  actionBtn: { padding: 8, backgroundColor: 'rgba(0,0,0,0.03)', borderRadius: 8, marginBottom: 5 },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  modalContent: { padding: 20, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '90%' },
-  formTitle: { fontSize: 18, fontWeight: 'bold' },
-  label: { fontSize: 10, fontWeight: 'bold', marginBottom: 5, marginTop: 5, letterSpacing: 1 },
-  input: { borderWidth: 1, borderRadius: 8, padding: 12, marginBottom: 10 },
-  chipSugestao: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 15, borderWidth: 1, marginRight: 8, alignSelf: 'flex-start' },
-  btnNorma: { padding: 8, backgroundColor: 'rgba(56, 189, 248, 0.1)', borderRadius: 10 },
-  modalActions: { flexDirection: 'row', marginTop: 15 },
-  btnSave: { padding: 15, borderRadius: 12, flex: 1, marginLeft: 10, alignItems: 'center' },
-  btnCancel: { padding: 15, borderRadius: 12, borderWidth: 1, alignItems: 'center', width: 60 },
-  cardInfo: { flex: 1 },
-  badgeRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
-  statusDot: { width: 8, height: 8, borderRadius: 4, marginRight: 8 },
-  badgeFilial: { fontSize: 9, fontWeight: '900', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, marginRight: 6 },
-  badgeSetor: { fontSize: 9, fontWeight: '800', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
-  equipNome: { fontSize: 17, fontWeight: '800' },
-  subText: { fontSize: 12, marginBottom: 5 },
-  divider: { height: 1, backgroundColor: 'rgba(0,0,0,0.05)', marginVertical: 10 },
-  metrologiaGrid: { flexDirection: 'row', justifyContent: 'space-between' },
-  metrologiaItem: { flex: 1 },
-  labelRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
-  metrologiaLabel: { fontSize: 9, fontWeight: '900' },
-  metrologiaValue: { fontSize: 14, fontWeight: '700' },
-  actionColumn: { justifyContent: 'center', paddingLeft: 10 },
-  row: { flexDirection: 'row', justifyContent: 'space-between' },
-  half: { width: '48%' }
+  container: { flex: 1, padding: 15 },
+  btnNova: { flexDirection: 'row', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, alignItems:'center' },
+  btnNovaText: { color: '#fff', fontWeight: 'bold', marginLeft: 6, fontSize: 13 },
+  card: { padding: 18, borderRadius: 12, marginBottom: 15, elevation: 2, shadowColor: '#000', shadowOffset: {width: 0, height: 2}, shadowOpacity: 0.1, shadowRadius: 4 },
+  cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  dot: { width: 10, height: 10, borderRadius: 5, marginRight: 8 },
+  cardTitle: { fontSize: 17, fontWeight: '900', flexShrink: 1 },
+  subText: { fontSize: 13, marginLeft: 18, marginBottom: 15, fontWeight: 'bold' },
+  infoRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8, marginLeft: 18 },
+  actions: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 15, borderTopWidth: 1, paddingTop: 15, gap: 12 },
+  actionBtn: { padding: 8, borderWidth: 1, borderRadius: 8 },
+  
+  modalContainer: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: 15 },
+  modalContent: { padding: 20, borderRadius: 16, elevation: 10 },
+  modalTitle: { fontSize: 18, fontWeight: '900' },
+  btnAnvisa: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
+  label: { fontSize: 12, fontWeight: 'bold', color: '#64748b', marginBottom: 6, marginTop: 5 },
+  input: { borderWidth: 1, borderRadius: 8, padding: 12, marginBottom: 10, fontSize: 14 },
+  chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, marginRight: 8, borderWidth: 1 },
+  chipTipo: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, borderWidth: 1 },
+  modalActions: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 20, gap: 10, borderTopWidth: 1, borderTopColor: 'rgba(0,0,0,0.1)', paddingTop: 15 },
+  btnCancel: { padding: 12, borderRadius: 8, borderWidth: 1, borderColor: 'transparent', justifyContent: 'center' },
+  btnSave: { paddingVertical: 12, paddingHorizontal: 16, borderRadius: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }
 });

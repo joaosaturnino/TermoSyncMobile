@@ -1,91 +1,116 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Activity } from 'lucide-react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useContext, useState } from 'react';
-import { Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { api } from '../api/api';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { AppContext } from '../context/AppContext';
 
-export default function LoginScreen({ onLogin }) {
-  const { theme } = useContext(AppContext);
+export default function LoginScreen() {
+  const { fazerLogin, isOffline } = useContext(AppContext);
   const [usuario, setUsuario] = useState('');
   const [senha, setSenha] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const fazerLogin = async () => {
-    if (!usuario || !senha) return Alert.alert('Aviso', 'Preencha todos os campos.');
+  const handleLogin = async () => {
+    if (!usuario || !senha) return;
     setLoading(true);
-    
-    try {
-      const res = await api.post('/api/login', { usuario, senha });
-      
-      // Guarda os dados
-      await AsyncStorage.setItem('token', res.data.token);
-      await AsyncStorage.setItem('userRole', res.data.role);
-      await AsyncStorage.setItem('userFilial', res.data.filial);
-      
-      // Passa para a próxima tela
-      onLogin(res.data);
-      
-    } catch (error) {
-      if (error.response) {
-        Alert.alert('Falha na Autenticação', error.response.data.error || 'Credenciais incorretas.');
-      } else {
-        // 🔴 MODO DETETIVE ATIVADO: Vai mostrar o URL exato e o erro técnico
-        Alert.alert(
-          'Detalhes do Erro de Rede', 
-          `Tentou ligar a: ${api.defaults.baseURL}/api/login\n\nErro interno: ${error.message}`
-        );
-      }
-    } finally {
-      setLoading(false);
-    }
+    await fazerLogin(usuario, senha);
+    setLoading(false);
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.primary }]}>
-      <View style={[styles.box, { backgroundColor: theme.card }]}>
-        <View style={styles.logoContainer}>
-          <Activity color={theme.primary} size={48} />
+    <KeyboardAvoidingView 
+      behavior={Platform.OS === "ios" ? "padding" : "height"} 
+      style={styles.container}
+    >
+      <ScrollView 
+        contentContainerStyle={styles.scrollContainer} 
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.loginBox}>
+          <View style={styles.logoContainer}>
+            <View style={styles.logoCircle}>
+              <MaterialCommunityIcons name="snowflake" size={50} color="#059669" />
+            </View>
+            <Text style={styles.title}>TermoSync</Text>
+            <Text style={styles.subtitle}>Corporate Platform ESG</Text>
+          </View>
+
+          {isOffline && (
+            <View style={styles.offlineWarning}>
+              <MaterialCommunityIcons name="wifi-off" size={16} color="#ef4444" />
+              <Text style={styles.offlineText}>Sem ligação ao servidor. Verifique a rede.</Text>
+            </View>
+          )}
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Credencial de Acesso</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Ex: admin_master"
+              placeholderTextColor="#94a3b8"
+              value={usuario}
+              onChangeText={setUsuario}
+              autoCapitalize="none"
+              autoCorrect={false}
+              showSoftInputOnFocus={true} // Força o teclado virtual no Tablet
+            />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Palavra-passe</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="••••••••"
+              placeholderTextColor="#94a3b8"
+              secureTextEntry
+              value={senha}
+              onChangeText={setSenha}
+              autoCapitalize="none"
+              showSoftInputOnFocus={true} // Força o teclado virtual no Tablet
+            />
+          </View>
+
+          <TouchableOpacity 
+            style={styles.btn} 
+            onPress={handleLogin} 
+            disabled={loading}
+          >
+            {loading ? <ActivityIndicator color="#ffffff" /> : <Text style={styles.btnText}>Autenticar</Text>}
+          </TouchableOpacity>
         </View>
-        <Text style={[styles.title, { color: theme.primary }]}>TermoSync</Text>
-        <Text style={[styles.subtitle, { color: theme.textMuted }]}>Corporate Platform ESG</Text>
-
-        <Text style={[styles.label, { color: theme.textMain }]}>Credencial / Loja</Text>
-        <TextInput 
-          style={[styles.input, { borderColor: theme.border, backgroundColor: theme.bg, color: theme.textMain }]} 
-          placeholder="admin ou gestor_porto"
-          placeholderTextColor={theme.textMuted}
-          value={usuario} 
-          onChangeText={setUsuario} 
-          autoCapitalize="none"
-        />
-
-        <Text style={[styles.label, { color: theme.textMain }]}>Palavra-passe</Text>
-        <TextInput 
-          style={[styles.input, { borderColor: theme.border, backgroundColor: theme.bg, color: theme.textMain }]} 
-          placeholder="••••••••"
-          placeholderTextColor={theme.textMuted}
-          secureTextEntry
-          value={senha} 
-          onChangeText={setSenha} 
-        />
-
-        <TouchableOpacity style={[styles.btn, { backgroundColor: theme.primary }]} onPress={fazerLogin} disabled={loading}>
-          <Text style={styles.btnText}>{loading ? 'A Autenticar...' : 'Autenticar'}</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'center', padding: 20 },
-  box: { padding: 30, borderRadius: 16, alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 10, elevation: 5 },
-  logoContainer: { backgroundColor: '#f0fdf4', padding: 15, borderRadius: 50, marginBottom: 10 },
-  title: { fontSize: 28, fontWeight: 'bold', marginBottom: 5 },
-  subtitle: { fontSize: 14, marginBottom: 30 },
-  label: { alignSelf: 'flex-start', fontSize: 12, fontWeight: 'bold', marginBottom: 5 },
-  input: { width: '100%', borderWidth: 1, borderRadius: 8, padding: 12, marginBottom: 15 },
-  btn: { width: '100%', padding: 15, borderRadius: 8, alignItems: 'center', marginTop: 10 },
-  btnText: { color: '#fff', fontWeight: 'bold', fontSize: 16 }
+  container: { 
+    flex: 1, 
+    backgroundColor: '#064e3b' 
+  },
+  scrollContainer: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20
+  },
+  loginBox: { 
+    backgroundColor: '#ffffff', 
+    width: '100%', 
+    maxWidth: 400, 
+    borderRadius: 16, 
+    padding: 30, 
+    elevation: 10 
+  },
+  logoContainer: { alignItems: 'center', marginBottom: 20 },
+  logoCircle: { backgroundColor: '#f8fafc', padding: 15, borderRadius: 50, marginBottom: 15, elevation: 5 },
+  title: { fontSize: 32, fontWeight: '900', color: '#059669', marginBottom: 5, letterSpacing: -1 },
+  subtitle: { fontSize: 14, color: '#64748b', fontWeight: '600' },
+  offlineWarning: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fee2e2', padding: 10, borderRadius: 8, marginBottom: 20, justifyContent: 'center' },
+  offlineText: { color: '#ef4444', fontSize: 12, fontWeight: 'bold', marginLeft: 8 },
+  inputGroup: { marginBottom: 20 },
+  label: { fontSize: 13, fontWeight: 'bold', color: '#0f172a', marginBottom: 8 },
+  input: { borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 8, padding: 15, fontSize: 16, color: '#0f172a', backgroundColor: '#f8fafc' },
+  btn: { backgroundColor: '#059669', padding: 15, borderRadius: 8, alignItems: 'center', marginTop: 10 },
+  btnText: { color: '#ffffff', fontSize: 16, fontWeight: 'bold' }
 });

@@ -1,250 +1,126 @@
-import * as shape from 'd3-shape';
-import {
-  ChevronDown, ChevronUp,
-  Leaf, List,
-  Percent, Zap
-} from 'lucide-react-native';
-import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import {
-  ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text,
-  TouchableOpacity, View
-} from 'react-native';
-import { AreaChart, Grid, LineChart, YAxis } from 'react-native-svg-charts';
-import { api, getSocket } from '../api/api';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import * as FileSystem from 'expo-file-system';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
+import { useContext, useEffect, useMemo, useState } from 'react';
+import { Alert, Dimensions, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import api from '../api/api';
 import { AppContext } from '../context/AppContext';
 
-const CUSTO_KWH_REAIS = 0.72; 
-const FATOR_EMISSAO_CO2 = 0.25; 
+const screenWidth = Dimensions.get('window').width;
 
-export default function SustentabilidadeScreen() {
-  const { filialAtiva, theme, userRole, userFilial } = useContext(AppContext);
+export default function RelatoriosScreen() {
+  const { filialAtiva, theme, CUSTO_KWH_REAIS, FATOR_EMISSAO_CO2, userRole } = useContext(AppContext);
   const [relatorios, setRelatorios] = useState([]);
-  const [equipamentos, setEquipamentos] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [mostrarTabelaBruta, setMostrarTabelaBruta] = useState(false);
-  const [equipamentoFiltro, setEquipamentoFiltro] = useState('');
-
-  const carregarDados = useCallback(async () => {
-    try {
-      const [resRel, resEq] = await Promise.all([
-        api.get('/api/relatorios'), 
-        api.get('/api/equipamentos')
-      ]);
-      setRelatorios(resRel.data);
-      setEquipamentos(resEq.data);
-    } catch (error) {
-      console.error('Erro de sincronização:', error);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
+  const [mostrarTabela, setMostrarTabela] = useState(false);
+  const [filtroTempo, setFiltroTempo] = useState(24);
 
   useEffect(() => {
-    carregarDados();
+    const dInicio = new Date(Date.now() - (filtroTempo * 60 * 60 * 1000)).toISOString();
+    const dFim = new Date().toISOString();
+    api.get(`/api/relatorios?data_inicio=${dInicio}&data_fim=${dFim}`).then(res => setRelatorios(res.data)).catch(() => {});
+  }, [filialAtiva, filtroTempo]);
 
-    const socket = getSocket();
+  const dados = useMemo(() => {
+    return filialAtiva === 'Todas' ? relatorios : (relatorios || []).filter(r => (r.filial || 'Loja Principal') === filialAtiva);
+  }, [relatorios, filialAtiva]);
 
-    // 🔴 CORREÇÃO: Removido o filtro bloqueador de "LOJA", garantindo que flui livremente.
-    socket.on('nova_leitura', (dadosNovaLeitura) => {
-      setRelatorios(prev => {
-        const novosDados = [...prev, dadosNovaLeitura];
-        if (novosDados.length > 15000) novosDados.shift();
-        return novosDados;
-      });
-    });
-
-    socket.on('atualizacao_dados', () => carregarDados());
-
-    return () => socket.disconnect();
-  }, [carregarDados]);
-
-  const stats = useMemo(() => {
-    const filtrados = relatorios.filter(r => {
-      const matchFilial = filialAtiva === 'Todas' || r.filial === filialAtiva;
-      const matchEquip = equipamentoFiltro === '' || r.nome === equipamentoFiltro;
-      return matchFilial && matchEquip;
-    });
+  const { totalKwh, slaCompliance, kpis, mktCalculado } = useMemo(() => {
+    if (!dados || dados.length === 0) return { totalKwh: 0, slaCompliance: '--', kpis: { min: '--', med: '--', max: '--' }, mktCalculado: '--' };
     
-    let somaKwh = 0, leiturasNoSLA = 0, somaTemp = 0, tMin = Infinity, tMax = -Infinity;
+    let tKwh = 0; let sTemp = 0; let min = Infinity; let max = -Infinity; let leiturasSLA = 0;
+    let somaMKT = 0;
 
-    filtrados.forEach(d => {
-      const temp = parseFloat(d.temperatura);
-      somaKwh += parseFloat(d.consumo_kwh || 0);
-      somaTemp += temp;
-      if (temp < tMin) tMin = temp;
-      if (temp > tMax) tMax = temp;
-      
-      const eqRef = equipamentos.find(e => e.nome === d.nome);
-      if (eqRef && temp >= eqRef.temp_min && temp <= eqRef.temp_max) leiturasNoSLA++;
-    });
-
-    const total = filtrados.length || 1;
-    
-    let somaExp = 0;
-    filtrados.forEach(d => {
+    dados.forEach(d => {
       const t = parseFloat(d.temperatura);
-      somaExp += Math.exp(-83.144 / (0.0083144 * (t + 273.15)));
+      tKwh += parseFloat(d.consumo_kwh || 0);
+      sTemp += t;
+      if (t < min) min = t; if (t > max) max = t;
+      if (t >= 2 && t <= 8) leiturasSLA++;
+      somaMKT += Math.exp(-83.144 / (0.0083144 * (t + 273.15)));
     });
-    const mkt = filtrados.length > 0 
-      ? ((83.144 / 0.0083144) / (-Math.log(somaExp / filtrados.length)) - 273.15).toFixed(2)
-      : '--';
-
-    const arrGrafico = filtrados.map(f => parseFloat(f.temperatura));
-    const arrEnergia = filtrados.map(f => parseFloat(f.consumo_kwh || 0));
-
-    const dadosGraficoFiltrados = arrGrafico.length <= 200 
-      ? arrGrafico 
-      : arrGrafico.filter((_, idx) => idx % Math.ceil(arrGrafico.length / 200) === 0);
-
-    const dadosEnergiaFiltrados = arrEnergia.length <= 200 
-      ? arrEnergia 
-      : arrEnergia.filter((_, idx) => idx % Math.ceil(arrEnergia.length / 200) === 0);
 
     return {
-      totalEnergia: somaKwh,
-      pegadaCarbono: (somaKwh * FATOR_EMISSAO_CO2).toFixed(1),
-      custoEstimado: (somaKwh * CUSTO_KWH_REAIS).toFixed(2),
-      slaCompliance: ((leiturasNoSLA / total) * 100).toFixed(1),
-      mediaTemp: (somaTemp / total).toFixed(2),
-      minTemp: tMin === Infinity ? '--' : tMin.toFixed(1),
-      maxTemp: tMax === -Infinity ? '--' : tMax.toFixed(1),
-      mktValue: mkt,
-      dadosGrafico: dadosGraficoFiltrados,
-      dadosEnergia: dadosEnergiaFiltrados,
-      dadosBrutos: [...filtrados].reverse().slice(0, 50)
+      totalKwh: tKwh,
+      slaCompliance: ((leiturasSLA / dados.length) * 100).toFixed(1),
+      kpis: { min: min.toFixed(1), med: (sTemp / dados.length).toFixed(2), max: max.toFixed(1) },
+      mktCalculado: ((83.144 / 0.0083144) / (-Math.log(somaMKT / dados.length)) - 273.15).toFixed(2)
     };
-  }, [relatorios, equipamentos, filialAtiva, equipamentoFiltro]);
+  }, [dados]);
 
-  if (loading) {
-    return (
-      <View style={[styles.container, { backgroundColor: theme.bg, justifyContent: 'center' }]}>
-        <ActivityIndicator size="large" color="#10b981" />
-      </View>
-    );
-  }
+  const gerarExportacao = async (tipo) => {
+    if (dados.length === 0) return Alert.alert("Aviso", "Sem dados para exportar.");
+    if (tipo === 'pdf') {
+      let html = `<html><body style="font-family:sans-serif;"><h2>Auditoria ESG - ${filialAtiva}</h2><table border="1" style="width:100%; border-collapse:collapse;"><tr><th>Data</th><th>Eq.</th><th>Temp</th><th>Consumo</th></tr>`;
+      dados.slice(0, 150).forEach(r => html += `<tr><td>${new Date(r.data_hora).toLocaleString()}</td><td>${r.nome}</td><td>${r.temperatura}°C</td><td>${r.consumo_kwh}kWh</td></tr>`);
+      html += `</table><br><p>Auditor Responsável: ${userRole}</p></body></html>`;
+      const { uri } = await Print.printToFileAsync({ html }); await Sharing.shareAsync(uri);
+    } else {
+      let csv = "\uFEFFData,Filial,Equipamento,Temp,Consumo\n";
+      dados.forEach(r => csv += `"${new Date(r.data_hora).toLocaleString()}","${r.filial}","${r.nome}","${r.temperatura}","${r.consumo_kwh}"\n`);
+      const uri = FileSystem.cacheDirectory + `Auditoria_ESG.csv`; await FileSystem.writeAsStringAsync(uri, csv, { encoding: FileSystem.EncodingType.UTF8 }); await Sharing.shareAsync(uri);
+    }
+  };
 
   return (
-    <ScrollView 
-      style={[styles.container, { backgroundColor: theme.bg }]}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); carregarDados(); }} colors={['#10b981']} />}
-    >
-      <View style={styles.header}>
-        <Leaf color="#059669" size={24} />
-        <Text style={[styles.title, { color: theme.textMain }]}>Inteligência e Sustentabilidade</Text>
+    <ScrollView style={[styles.container, { backgroundColor: theme.bg }]} contentContainerStyle={{ padding: 15 }}>
+      
+      <View style={styles.esgGrid}>
+        <View style={[styles.esgCard, { borderLeftColor: theme.success, backgroundColor: theme.card }]}><Text style={styles.esgL}><MaterialCommunityIcons name="leaf" size={12}/> PEGADA CARBONO</Text><Text style={[styles.esgV, { color: theme.success }]}>{(totalKwh * FATOR_EMISSAO_CO2).toFixed(1)}kg</Text></View>
+        <View style={[styles.esgCard, { borderLeftColor: theme.warning, backgroundColor: theme.card }]}><Text style={styles.esgL}><MaterialCommunityIcons name="currency-usd" size={12}/> CUSTO ESTIMADO</Text><Text style={[styles.esgV, { color: theme.warning }]}>R$ {(totalKwh * CUSTO_KWH_REAIS).toFixed(2)}</Text></View>
       </View>
 
-      <View style={styles.kpiRow}>
-        <View style={[styles.kpiCard, { borderLeftColor: '#10b981', backgroundColor: theme.card }]}>
-          <Leaf size={16} color="#10b981" />
-          <Text style={styles.kpiLabel}>PEGADA DE CARBONO</Text>
-          <Text style={[styles.kpiValue, { color: '#10b981' }]}>{stats.pegadaCarbono} <Text style={styles.unit}>kg CO2</Text></Text>
+      <View style={[styles.esgCard, { width: '100%', marginBottom: 15, borderLeftColor: theme.primary, backgroundColor: theme.card }]}>
+        <Text style={styles.esgL}><MaterialCommunityIcons name="thermometer" size={12}/> FATOR TÉRMICO E MKT (SLA: {slaCompliance}%)</Text>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: theme.border, paddingBottom: 10, marginBottom: 10 }}>
+          <View style={{ alignItems: 'center' }}><Text style={styles.subL}>Mínima</Text><Text style={[styles.subV, { color: theme.success }]}>{kpis.min}°C</Text></View>
+          <View style={{ alignItems: 'center' }}><Text style={styles.subL}>Média</Text><Text style={[styles.subV, { color: theme.textMain }]}>{kpis.med}°C</Text></View>
+          <View style={{ alignItems: 'center' }}><Text style={styles.subL}>Máxima</Text><Text style={[styles.subV, { color: theme.danger }]}>{kpis.max}°C</Text></View>
         </View>
-        <View style={[styles.kpiCard, { borderLeftColor: '#f59e0b', backgroundColor: theme.card }]}>
-          <Zap size={16} color="#f59e0b" />
-          <Text style={styles.kpiLabel}>CUSTO ESTIMADO (ESG)</Text>
-          <Text style={[styles.kpiValue, { color: '#f59e0b' }]}><Text style={styles.unit}>R$ </Text>{stats.custoEstimado}</Text>
-        </View>
-      </View>
-
-      <View style={[styles.auditCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
-        <View style={styles.auditHeader}>
-          <Percent size={18} color={theme.primary} />
-          <Text style={[styles.auditTitle, { color: theme.textMain }]}> Compliance Score (SLA)</Text>
-          <Text style={[styles.slaVal, { color: parseFloat(stats.slaCompliance) > 95 ? '#10b981' : '#ef4444' }]}>{stats.slaCompliance}%</Text>
-        </View>
-        
-        <View style={styles.tempGrid}>
-          <View style={styles.tempItem}><Text style={styles.tempLabel}>MÍNIMA</Text><Text style={[styles.tempVal, {color:'#10b981'}]}>{stats.minTemp}°C</Text></View>
-          <View style={[styles.tempItem, styles.borderX]}><Text style={styles.tempLabel}>MÉDIA</Text><Text style={[styles.tempVal, {color:theme.textMain}]}>{stats.mediaTemp}°C</Text></View>
-          <View style={styles.tempItem}><Text style={styles.tempLabel}>MÁXIMA</Text><Text style={[styles.tempVal, {color:'#ef4444'}]}>{stats.maxTemp}°C</Text></View>
-        </View>
-
-        <View style={[styles.mktHighlight, { backgroundColor: theme.bg }]}>
-          <View>
-            <Text style={[styles.mktTitle, { color: theme.primary }]}>TEMP. CINÉTICA MÉDIA (MKT)</Text>
-            <Text style={[styles.mktSub, { color: theme.textMuted }]}>Fórmula RDC-ANVISA</Text>
-          </View>
-          <Text style={[styles.mktBigVal, { color: theme.primary }]}>{stats.mktValue}°C</Text>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Text style={{ fontSize: 13, fontWeight: 'bold', color: theme.primary }}>Temperatura Cinética Média</Text>
+          <Text style={{ fontSize: 22, fontWeight: '900', color: theme.primary, backgroundColor: theme.bg, paddingHorizontal: 15, paddingVertical: 5, borderRadius: 8 }}>{mktCalculado}°C</Text>
         </View>
       </View>
 
-      <View style={[styles.chartWrapper, { backgroundColor: theme.card, borderColor: theme.border }]}>
-        <Text style={[styles.chartTitle, { color: theme.textMain }]}>Tendência Térmica vs Consumo</Text>
-        <View style={{ height: 180, flexDirection: 'row' }}>
-           <YAxis data={stats.dadosGrafico} contentContainerStyle={{ marginBottom: 10 }} svg={{ fontSize: 8, fill: theme.textMuted }} numberOfTicks={5} />
-           <View style={{ flex: 1, marginLeft: 5 }}>
-              <AreaChart style={{ flex: 1 }} data={stats.dadosGrafico} svg={{ fill: 'rgba(5, 150, 105, 0.1)' }} curve={shape.curveMonotoneX}><Grid /></AreaChart>
-              <LineChart style={StyleSheet.absoluteFill} data={stats.dadosEnergia} svg={{ stroke: '#f59e0b', strokeWidth: 1.5 }} curve={shape.curveMonotoneX} />
-           </View>
-        </View>
-      </View>
-
-      <View style={styles.filterBox}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
-          <TouchableOpacity onPress={() => setEquipamentoFiltro('')} style={[styles.chip, { borderColor: theme.border, backgroundColor: equipamentoFiltro === '' ? '#38bdf8' : 'transparent' }]}><Text style={{ color: equipamentoFiltro === '' ? '#fff' : theme.textMuted, fontSize: 11, fontWeight: '700' }}>Geral</Text></TouchableOpacity>
-          {equipamentos.filter(e => filialAtiva === 'Todas' || e.filial === filialAtiva).map(eq => (
-            <TouchableOpacity key={eq.id} onPress={() => setEquipamentoFiltro(eq.nome)} style={[styles.chip, { borderColor: theme.border, backgroundColor: equipamentoFiltro === eq.nome ? '#38bdf8' : 'transparent' }]}><Text style={{ color: equipamentoFiltro === eq.nome ? '#fff' : theme.textMuted, fontSize: 11, fontWeight: '700' }}>{eq.nome}</Text></TouchableOpacity>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 15 }}>
+        <View style={{ flexDirection: 'row', gap: 5 }}>
+          {[1, 12, 24].map(h => (
+            <TouchableOpacity key={h} style={[styles.btnTime, { borderColor: theme.border, backgroundColor: filtroTempo === h ? theme.textMain : theme.card }]} onPress={() => setFiltroTempo(h)}><Text style={{ color: filtroTempo === h ? theme.bg : theme.textMuted, fontSize: 12, fontWeight: 'bold' }}>{h}h</Text></TouchableOpacity>
           ))}
-        </ScrollView>
+        </View>
+        <View style={{ flexDirection: 'row', gap: 5 }}>
+          <TouchableOpacity style={[styles.btnE, {backgroundColor: theme.card, borderColor: theme.border}]} onPress={() => gerarExportacao('csv')}><MaterialCommunityIcons name="download" size={18} color={theme.textMuted}/></TouchableOpacity>
+          <TouchableOpacity style={[styles.btnE, { backgroundColor: theme.danger, borderColor: theme.danger }]} onPress={() => gerarExportacao('pdf')}><MaterialCommunityIcons name="file-pdf-box" size={18} color="#fff"/></TouchableOpacity>
+        </View>
       </View>
 
-      <TouchableOpacity style={[styles.btnTable, { backgroundColor: theme.card, borderColor: theme.border }]} onPress={() => setMostrarTabelaBruta(!mostrarTabelaBruta)}>
-        <List size={18} color={theme.primary} /><Text style={[styles.btnTableText, { color: theme.textMain }]}> Matriz de Dados p/ Auditores</Text>
-        {mostrarTabelaBruta ? <ChevronUp size={18} color={theme.textMuted} /> : <ChevronDown size={18} color={theme.textMuted} />}
+      <TouchableOpacity style={[styles.btnMatriz, { backgroundColor: theme.card, borderColor: theme.border }]} onPress={() => setMostrarTabela(!mostrarTabela)}>
+        <Text style={{ color: theme.textMuted, fontWeight: 'bold' }}><MaterialCommunityIcons name="list-status" size={16}/> {mostrarTabela ? 'Esconder Matriz Bruta' : 'Ver Matriz de Dados p/ Auditores'}</Text>
       </TouchableOpacity>
 
-      {mostrarTabelaBruta && (
-        <View style={[styles.table, { backgroundColor: theme.card, borderColor: theme.border }]}>
-          <View style={styles.thRow}><Text style={styles.th}>DATA</Text><Text style={styles.th}>MÁQUINA</Text><Text style={styles.th}>T°C</Text><Text style={styles.th}>kWh</Text></View>
-          {stats.dadosBrutos.map((item, idx) => (
-            <View key={idx} style={[styles.tr, { borderBottomColor: theme.border }]}>
-              <Text style={[styles.td, { color: theme.textMuted }]}>{new Date(item.data_hora).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</Text>
-              <Text style={[styles.td, { fontWeight: '700' }]} numberOfLines={1}>{item.nome}</Text>
-              <Text style={[styles.td, { fontWeight: '800', color: theme.primary }]}>{parseFloat(item.temperatura).toFixed(1)}°</Text>
-              <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}><Text style={{ fontWeight: '800', color: '#f59e0b', fontSize: 10 }}>{item.consumo_kwh} </Text><Zap size={10} color="#f59e0b" fill="#f59e0b" /></View>
-            </View>
-          ))}
+      {mostrarTabela && dados.slice(0, 30).map((r, i) => (
+        <View key={i} style={[styles.row, { borderBottomColor: theme.border }]}>
+          <View style={{flex: 2}}><Text style={{ color: theme.textMain, fontWeight: 'bold' }}>{r.nome}</Text><Text style={{fontSize: 10, color: theme.textMuted}}>{new Date(r.data_hora).toLocaleTimeString()}</Text></View>
+          <Text style={{ flex: 1, color: theme.primary, fontWeight: '900', textAlign: 'center' }}>{parseFloat(r.temperatura).toFixed(1)}°C</Text>
+          <Text style={{ flex: 1, color: theme.warning, textAlign: 'right', fontWeight: '900' }}>{parseFloat(r.consumo_kwh).toFixed(2)}kWh</Text>
         </View>
-      )}
-
-      <View style={{ height: 40 }} />
+      ))}
+      <View style={{height: 40}} />
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 12 },
-  header: { flexDirection: 'row', alignItems: 'center', marginBottom: 15 },
-  title: { fontSize: 16, fontWeight: '800', marginLeft: 8 },
-  kpiRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },
-  kpiCard: { flex: 0.48, padding: 12, borderRadius: 12, borderLeftWidth: 5, elevation: 2 },
-  kpiLabel: { fontSize: 6.5, fontWeight: '900', color: '#64748b', marginTop: 5, letterSpacing: 0.5 },
-  kpiValue: { fontSize: 16, fontWeight: '900', marginTop: 2 },
-  unit: { fontSize: 8, fontWeight: '700' },
-  auditCard: { padding: 15, borderRadius: 15, borderWidth: 1, marginBottom: 12 },
-  auditHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 15 },
-  auditTitle: { fontSize: 12, fontWeight: '800', flex: 1 },
-  slaVal: { fontSize: 18, fontWeight: '900' },
-  tempGrid: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 15, borderBottomWidth: 1, borderBottomColor: 'rgba(0,0,0,0.03)', paddingBottom: 10 },
-  tempItem: { flex: 1, alignItems: 'center' },
-  borderX: { borderLeftWidth: 1, borderRightWidth: 1, borderColor: 'rgba(0,0,0,0.05)' },
-  tempLabel: { fontSize: 7, fontWeight: '800', color: '#64748b' },
-  tempVal: { fontSize: 14, fontWeight: '800' },
-  mktHighlight: { padding: 10, borderRadius: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  mktTitle: { fontSize: 7, fontWeight: '900' },
-  mktBigVal: { fontSize: 18, fontWeight: '900' },
-  chartWrapper: { padding: 12, borderRadius: 15, borderWidth: 1, marginBottom: 12 },
-  chartTitle: { fontSize: 10, fontWeight: '800', marginBottom: 10 },
-  filterBox: { marginBottom: 10 },
-  chipRow: { flexDirection: 'row' },
-  chip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 15, borderWidth: 1, marginRight: 6 },
-  btnTable: { padding: 15, borderRadius: 12, borderWidth: 1, flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
-  btnTableText: { flex: 1, fontWeight: '800', fontSize: 12 },
-  table: { borderRadius: 12, borderWidth: 1, overflow: 'hidden' },
-  thRow: { flexDirection: 'row', backgroundColor: 'rgba(0,0,0,0.03)', padding: 10 },
-  th: { flex: 1, fontSize: 8, fontWeight: '900', color: '#64748b' },
-  tr: { flexDirection: 'row', padding: 10, borderBottomWidth: 1, alignItems: 'center' },
-  td: { flex: 1, fontSize: 9 }
+  container: { flex: 1 },
+  esgGrid: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 15 },
+  esgCard: { width: '48%', padding: 15, borderRadius: 12, borderLeftWidth: 5, elevation: 3 },
+  esgL: { fontSize: 10, fontWeight: 'bold', color: '#64748b', marginBottom: 8 },
+  esgV: { fontSize: 24, fontWeight: '900' },
+  subL: { fontSize: 11, color: '#64748b' },
+  subV: { fontSize: 16, fontWeight: '900' },
+  btnTime: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, borderWidth: 1 },
+  btnE: { padding: 10, borderRadius: 8, borderWidth: 1 },
+  btnMatriz: { padding: 15, borderRadius: 8, alignItems: 'center', marginVertical: 10, borderStyle: 'dashed', borderWidth: 1 },
+  row: { flexDirection: 'row', paddingVertical: 12, borderBottomWidth: 1, alignItems: 'center' }
 });
