@@ -32,7 +32,7 @@ export default function LoginScreen() {
               <MaterialCommunityIcons name="snowflake" size={50} color="#059669" />
             </View>
             <Text style={styles.title}>TermoSync</Text>
-            <Text style={styles.subtitle}>Corporate Platform ESG</Text>
+            <Text style={styles.subtitle}>O clima do seu negócio na palma da mão.</Text>
           </View>
 
           {isOffline && (
