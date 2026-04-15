@@ -4,7 +4,7 @@ import io from 'socket.io-client';
 
 // 🔴 COLOCA AQUI O IP QUE APARECE NO TEU TERMINAL DO EXPO
 // Copia apenas os números (192.168...) e deixa a porta :3000 no final
-const BASE_URL = 'http://192.168.200.27:3000'; 
+const BASE_URL = 'http://10.98.173.164:3000'; 
 
 export const api = axios.create({
   baseURL: BASE_URL,
