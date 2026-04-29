@@ -1,80 +1,130 @@
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-import * as Print from 'expo-print';
-import * as Sharing from 'expo-sharing';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useContext, useMemo, useState } from 'react';
-import { Alert, FlatList, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Platform, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { AppContext } from '../context/AppContext';
 
-export default function HistoricoChamadosScreen() {
-  const { chamados, theme, userRole, nomeLogado, filialAtiva, tecnicosDb } = useContext(AppContext);
-  const [filtroTecnico, setFiltroTecnico] = useState('todos');
+export default function HistoricoChamadosScreen({ navigation }) {
+  const { userRole, filialAtiva, nomeLogado, chamados = [], tecnicosDb = [] } = useContext(AppContext);
+  const [tecnicoFiltroOS, setTecnicoFiltroOS] = useState('todos');
 
-  const chamadosHistorico = useMemo(() => {
-    const trintaDias = new Date(); trintaDias.setDate(trintaDias.getDate() - 30);
-    return (chamados || []).filter(c => c.status === 'Concluído' && new Date(c.data_conclusao) < trintaDias);
-  }, [chamados]);
-
-  const listaParaPDF = useMemo(() => {
-    let list = chamadosHistorico;
+  const chamadosHistoricoFiltrados = useMemo(() => {
+    const trintaDiasAtras = new Date(); trintaDiasAtras.setDate(trintaDiasAtras.getDate() - 30);
+    let list = chamados.filter(c => c.status === 'Concluído' && new Date(c.data_conclusao) < trintaDiasAtras);
+    
+    if (userRole === 'ADMIN' && filialAtiva !== 'Todas') list = list.filter(c => c.filial === filialAtiva);
     if (userRole === 'MANUTENCAO') list = list.filter(c => c.tecnico_responsavel === nomeLogado);
-    else if (filtroTecnico !== 'todos') list = list.filter(c => c.tecnico_responsavel === filtroTecnico);
-    if (userRole !== 'LOJA' && filialAtiva !== 'Todas') list = list.filter(c => c.filial === filialAtiva);
-    return list;
-  }, [chamadosHistorico, filtroTecnico, userRole, filialAtiva, nomeLogado]);
-
-  const imprimirLivroAntigo = async () => {
-    if (listaParaPDF.length === 0) return Alert.alert("Aviso", "Sem Ordens de Serviço históricas.");
-    let html = `<html><body style="font-family:sans-serif; padding: 20px;"><h2>LIVRO DE OS (ARQUIVO > 30 DIAS)</h2>`;
-    listaParaPDF.forEach(c => {
-      html += `<div style="border-bottom:2px dashed #ccc; padding: 20px 0;">
-        <h3>OS #${c.id} - ${c.filial}</h3>
-        <p><b>Equipamento:</b> ${c.equipamento_nome} | <b>Data:</b> ${new Date(c.data_conclusao).toLocaleDateString()}</p>
-        <p><b>Técnico:</b> ${c.tecnico_responsavel}</p>
-        <p><b>Relatório:</b> ${c.nota_resolucao}</p><br><p>_________________________________<br>Assinatura</p>
-      </div>`;
-    });
-    html += `</body></html>`;
-    const { uri } = await Print.printToFileAsync({ html }); await Sharing.shareAsync(uri);
-  };
+    else if (tecnicoFiltroOS !== 'todos') list = list.filter(c => c.tecnico_responsavel === tecnicoFiltroOS);
+    
+    return list.sort((a, b) => new Date(b.data_conclusao) - new Date(a.data_conclusao));
+  }, [chamados, filialAtiva, userRole, nomeLogado, tecnicoFiltroOS]);
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.bg }]}>
+    <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        {userRole !== 'MANUTENCAO' && (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ maxHeight: 40, marginBottom: 15 }}>
-            <TouchableOpacity style={[styles.pill, filtroTecnico === 'todos' && styles.pillA]} onPress={() => setFiltroTecnico('todos')}><Text style={{ color: filtroTecnico === 'todos' ? '#fff' : '#64748b', fontWeight: 'bold' }}>Todos Técnicos</Text></TouchableOpacity>
-            {tecnicosDb?.map(t => (
-              <TouchableOpacity key={t.id} style={[styles.pill, filtroTecnico === t.nome_tecnico && styles.pillA]} onPress={() => setFiltroTecnico(t.nome_tecnico)}><Text style={{ color: filtroTecnico === t.nome_tecnico ? '#fff' : '#64748b', fontWeight: 'bold' }}>{t.nome_tecnico}</Text></TouchableOpacity>
-            ))}
-          </ScrollView>
-        )}
-        <TouchableOpacity style={styles.btnPdf} onPress={imprimirLivroAntigo}><MaterialCommunityIcons name="printer" size={20} color="#fff" /><Text style={styles.btnText}> Imprimir Arquivo (${listaParaPDF.length})</Text></TouchableOpacity>
+        <TouchableOpacity onPress={() => navigation.openDrawer()} style={{ padding: 5 }}>
+          <Ionicons name="menu" size={28} color="#059669" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Arquivo de Intervenções</Text>
+        <View style={{ width: 28 }} />
       </View>
 
-      {chamadosHistorico.length === 0 ? (
-          <View style={{alignItems:'center', marginTop:50}}><MaterialCommunityIcons name="archive" size={50} color={theme.textMuted} /><Text style={{color: theme.textMuted, marginTop:10}}>Não há OS com mais de 30 dias.</Text></View>
-      ) : (
-        <FlatList data={chamadosHistorico} keyExtractor={i => i.id.toString()} renderItem={({ item }) => (
-          <View style={[styles.card, { backgroundColor: theme.card, borderLeftColor: 'gray', opacity: 0.8 }]}>
-            <View style={{flexDirection: 'row', justifyContent: 'space-between'}}><Text style={[styles.title, { color: theme.textMain }]}>{item.equipamento_nome}</Text><Text style={styles.badge}>Arquivado</Text></View>
-            <Text style={{ color: theme.textMuted, marginTop: 5 }}>{item.filial} | Técnico: {item.tecnico_responsavel}</Text>
-            <View style={styles.resBox}><Text style={{ color: theme.textMain, fontSize: 12, fontWeight: 'bold' }}>Resolução: {item.nota_resolucao}</Text><Text style={{fontSize: 10, color:'gray', marginTop: 4}}>{new Date(item.data_conclusao).toLocaleDateString()}</Text></View>
-          </View>
-        )} />
+      {userRole !== 'MANUTENCAO' && (
+        <View style={styles.filtersContainer}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 15, gap: 10 }}>
+            <TouchableOpacity style={[styles.filterBtn, tecnicoFiltroOS === 'todos' && styles.filterBtnActive]} onPress={() => setTecnicoFiltroOS('todos')}>
+              <Text style={[styles.filterBtnText, tecnicoFiltroOS === 'todos' && styles.filterBtnTextActive]}>Todos os Técnicos</Text>
+            </TouchableOpacity>
+            {tecnicosDb?.map(tec => (
+              <TouchableOpacity key={tec.id} style={[styles.filterBtn, tecnicoFiltroOS === tec.nome_tecnico && styles.filterBtnActive]} onPress={() => setTecnicoFiltroOS(tec.nome_tecnico)}>
+                <Text style={[styles.filterBtnText, tecnicoFiltroOS === tec.nome_tecnico && styles.filterBtnTextActive]}>{tec.nome_tecnico}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
       )}
-    </View>
+
+      <ScrollView contentContainerStyle={styles.listContainer}>
+        {chamadosHistoricoFiltrados.length === 0 ? (
+          <View style={styles.emptyState}>
+            <MaterialCommunityIcons name="archive" size={64} color="#94a3b8" style={{ opacity: 0.5 }} />
+            <Text style={styles.emptyTitle}>Arquivo Vazio</Text>
+            <Text style={styles.emptySub}>Ainda não existem O.S. arquivadas (+30 dias).</Text>
+          </View>
+        ) : (
+          chamadosHistoricoFiltrados.map(c => (
+            <View key={c.id} style={styles.historicoCard}>
+              <View style={styles.historicoHeader}>
+                <View style={styles.historicoTitleBox}>
+                  <MaterialCommunityIcons name="archive" size={20} color="#64748b" />
+                  <Text style={styles.historicoEquip}>{c.equipamento_nome}</Text>
+                </View>
+                <View style={styles.badgeArquivado}><Text style={styles.badgeArquivadoText}>Arquivado</Text></View>
+              </View>
+
+              <View style={styles.historicoDescBox}>
+                <Text style={styles.historicoDescText}>"{c.descricao}"</Text>
+              </View>
+
+              <View style={styles.metaGrid}>
+                <View style={styles.metaRow}><MaterialCommunityIcons name="map-marker" size={14} color="#64748b" /><Text style={styles.metaText}>Localização: <Text style={styles.metaBold}>{c.filial}</Text></Text></View>
+                <View style={styles.metaRow}><MaterialCommunityIcons name="account" size={14} color="#64748b" /><Text style={styles.metaText}>Solicitante: <Text style={styles.metaBold}>{c.solicitante_nome || c.aberto_por}</Text></Text></View>
+                <View style={styles.metaRow}><MaterialCommunityIcons name="wrench" size={14} color="#64748b" /><Text style={styles.metaText}>Técnico: <Text style={styles.metaBold}>{c.tecnico_responsavel || 'Equipe Geral'}</Text></Text></View>
+              </View>
+
+              <View style={styles.resolucaoBox}>
+                <View style={styles.resolucaoTitleBox}>
+                  <MaterialCommunityIcons name="check-square" size={16} color="#64748b" />
+                  <Text style={styles.resolucaoTitle}>Registo de Intervenção:</Text>
+                </View>
+                <Text style={styles.resolucaoText}>{c.nota_resolucao}</Text>
+                <View style={styles.resolucaoDateBox}>
+                  <MaterialCommunityIcons name="calendar-check" size={14} color="#64748b" />
+                  <Text style={styles.resolucaoDate}>Finalizado a {new Date(c.data_conclusao).toLocaleDateString()}</Text>
+                </View>
+              </View>
+            </View>
+          ))
+        )}
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 15 },
-  header: { marginBottom: 15 },
-  pill: { paddingHorizontal: 15, paddingVertical: 8, borderRadius: 20, backgroundColor: '#e2e8f0', marginRight: 10, justifyContent: 'center' },
-  pillA: { backgroundColor: '#0f172a' },
-  btnPdf: { backgroundColor: '#0f172a', flexDirection: 'row', padding: 15, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
-  btnText: { color: '#fff', fontWeight: '900', textTransform: 'uppercase', fontSize: 12, marginLeft: 8 },
-  card: { padding: 18, borderRadius: 12, marginBottom: 12, borderLeftWidth: 6, elevation: 2 },
-  title: { fontSize: 16, fontWeight: '900' },
-  badge: { fontSize: 10, fontWeight: 'bold', backgroundColor: 'gray', color: 'white', padding: 4, borderRadius: 6 },
-  resBox: { marginTop: 10, padding: 12, backgroundColor: 'rgba(0,0,0,0.05)', borderRadius: 8 }
+  container: { flex: 1, backgroundColor: '#f8fafc' },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 15, backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#e2e8f0', paddingTop: Platform.OS === 'ios' ? 50 : 15 },
+  headerTitle: { fontSize: 18, fontWeight: '900', color: '#0f172a' },
+  filtersContainer: { paddingVertical: 15, backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#e2e8f0' },
+  filterBtn: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: '#f1f5f9', borderWidth: 1, borderColor: '#e2e8f0' },
+  filterBtnActive: { backgroundColor: '#64748b', borderColor: '#64748b' },
+  filterBtnText: { color: '#64748b', fontWeight: 'bold', fontSize: 13 },
+  filterBtnTextActive: { color: '#fff' },
+  listContainer: { padding: 15, paddingBottom: 40 },
+  
+  emptyState: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60 },
+  emptyTitle: { fontSize: 18, fontWeight: '900', color: '#0f172a', marginTop: 15 },
+  emptySub: { fontSize: 14, color: '#64748b', textAlign: 'center', marginTop: 5 },
+
+  // Efeito de Arquivo/Desbotado
+  historicoCard: { backgroundColor: '#fff', borderRadius: 16, padding: 20, marginBottom: 15, borderBottomWidth: 4, borderBottomColor: '#cbd5e1', opacity: 0.9, elevation: 1 },
+  historicoHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
+  historicoTitleBox: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  historicoEquip: { fontSize: 16, fontWeight: '900', color: '#0f172a' },
+  badgeArquivado: { backgroundColor: 'rgba(100, 116, 139, 0.15)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(100, 116, 139, 0.2)' },
+  badgeArquivadoText: { fontSize: 10, fontWeight: '900', color: '#64748b', textTransform: 'uppercase' },
+  
+  historicoDescBox: { backgroundColor: 'rgba(0,0,0,0.02)', borderLeftWidth: 3, borderLeftColor: '#cbd5e1', padding: 12, borderRadius: 8, marginBottom: 15 },
+  historicoDescText: { fontSize: 14, fontStyle: 'italic', color: '#334155' },
+  
+  metaGrid: { gap: 8, marginBottom: 15 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  metaText: { fontSize: 12, color: '#64748b' },
+  metaBold: { fontWeight: '700', color: '#0f172a' },
+
+  resolucaoBox: { padding: 12, borderRadius: 10, backgroundColor: 'rgba(100, 116, 139, 0.05)', borderWidth: 1, borderColor: 'rgba(100, 116, 139, 0.3)', borderStyle: 'dashed' },
+  resolucaoTitleBox: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
+  resolucaoTitle: { color: '#64748b', fontWeight: '800', fontSize: 12 },
+  resolucaoText: { fontSize: 13, color: '#0f172a', fontWeight: '500' },
+  resolucaoDateBox: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 8 },
+  resolucaoDate: { fontSize: 11, color: '#64748b', fontWeight: '700' }
 });

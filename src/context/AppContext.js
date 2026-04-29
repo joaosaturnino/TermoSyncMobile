@@ -1,211 +1,176 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import React, { createContext, useEffect, useState, useRef, useCallback } from 'react';
-import { Alert, View, Text, StyleSheet, Animated } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { Audio } from 'expo-av';
-import { api, getSocket } from '../api/api';
+import axios from 'axios';
+import { createContext, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { io } from 'socket.io-client';
 
 export const AppContext = createContext();
 
+// 🔴 AVISO: MANTÉM AQUI O TEU IP DA REDE LOCAL
+const API_URL = 'http://192.168.200.27:3000/api'; 
+const SOCKET_URL = 'http://192.168.200.27:3000';
+
 export const AppProvider = ({ children }) => {
   const [token, setToken] = useState(null);
-  const [userRole, setUserRole] = useState('LOJA');
-  const [userFilial, setUserFilial] = useState('');
-  const [filialAtiva, setFilialAtiva] = useState('Todas');
-  const [isDarkMode, setIsDarkMode] = useState(false);
-
-  const [latencia, setLatencia] = useState(0);
-  const [isOffline, setIsOffline] = useState(false);
-  const [somAtivoState, setSomAtivoState] = useState(true);
-  
-  const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  
-  const CUSTO_KWH_REAIS = 0.72; 
-  const FATOR_EMISSAO_CO2 = 0.25;
-
+  const [userId, setUserId] = useState(null);
+  const [userRole, setUserRole] = useState(null);
+  const [userFilial, setUserFilial] = useState(null);
   const [nomeLogado, setNomeLogado] = useState('');
   const [papelLogado, setPapelLogado] = useState('');
-  const [loginAtivo, setLoginAtivo] = useState('');
 
   const [equipamentos, setEquipamentos] = useState([]);
   const [notificacoes, setNotificacoes] = useState([]);
-  const [chamados, setChamados] = useState([]);
-  const [tecnicosDb, setTecnicosDb] = useState([]);
   const [filiaisDb, setFiliaisDb] = useState([]);
-  const [setoresDb, setSetoresDb] = useState([]);
-  
-  const [loading, setLoading] = useState(true);
-  const lastAlertIdRef = useRef(-1);
-  const soundObject = useRef(new Audio.Sound());
+  const [filialAtiva, setFilialAtiva] = useState('Todas');
 
-  useEffect(() => { carregarCredenciais(); initAudio(); }, []);
+  const [socket, setSocket] = useState(null);
+  const [contatosDb, setContatosDb] = useState([]);
+  const [historicoChat, setHistoricoChat] = useState([]);
+  const [naoLidasPorContato, setNaoLidasPorContato] = useState({});
+  const [chamadaAtiva, setChamadaAtiva] = useState(null);
 
-  const initAudio = async () => {
-    try { await soundObject.current.loadAsync(require('../../assets/sounds/alert.mp3')); } catch (e) {}
-  };
+  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [somAtivoState, setSomAtivoState] = useState(true);
+  const [latencia, setLatencia] = useState(0);
+  const [isOffline, setIsOffline] = useState(false);
 
-  const tocarAlarme = async () => {
-    if (!somAtivoState) return;
-    try { await soundObject.current.replayAsync(); } catch (e) {}
-  };
-
-  const showToast = useCallback((message, type = 'success') => {
-    setToast({ show: true, message, type });
-    Animated.timing(fadeAnim, { toValue: 1, duration: 300, useNativeDriver: true }).start();
-
-    setTimeout(() => {
-      Animated.timing(fadeAnim, { toValue: 0, duration: 300, useNativeDriver: true }).start(() => {
-        setToast({ show: false, message: '', type: 'success' });
-      });
-    }, 5000);
-  }, [fadeAnim]);
-
-  const alternarSom = () => {
-    const novoEstado = !somAtivoState;
-    setSomAtivoState(novoEstado);
-    showToast(novoEstado ? 'Alarmes sonoros ativados.' : 'Alarmes sonoros silenciados.', 'info');
-  };
-
-  const carregarCredenciais = async () => {
-    try {
-      const savedToken = await AsyncStorage.getItem('token');
-      if (savedToken) {
-        setToken(savedToken);
-        setUserRole(await AsyncStorage.getItem('userRole') || 'LOJA');
-        setUserFilial(await AsyncStorage.getItem('userFilial') || '');
-        setNomeLogado(await AsyncStorage.getItem('nomeLogado') || '');
-        setPapelLogado(await AsyncStorage.getItem('papelLogado') || '');
-        setLoginAtivo(await AsyncStorage.getItem('loginAtivo') || '');
-        if (await AsyncStorage.getItem('theme') === 'dark') setIsDarkMode(true);
-        await carregarDadosBasicos();
-      }
-    } catch (e) {} finally { setLoading(false); }
-  };
-
-  const fazerLogin = async (usuario, senha) => {
-    try {
-      const res = await api.post('/api/login', { usuario, senha });
-      setToken(res.data.token); setUserRole(res.data.role); setUserFilial(res.data.filial);
-      setFilialAtiva(res.data.role !== 'LOJA' ? 'Todas' : res.data.filial);
-      
-      let identityName = usuario; let roleTitle = 'Gestor de Loja';
-      if (res.data.role === 'ADMIN') { identityName = 'Administrador'; roleTitle = 'Acesso Master'; }
-      else if (res.data.role === 'MANUTENCAO') { identityName = res.data.nome_tecnico || 'Técnico'; roleTitle = 'Manutenção Global'; }
-      else if (res.data.role === 'LOJA') {
-          if (res.data.nome_gerente) { identityName = res.data.nome_gerente; roleTitle = 'Gerente da Loja'; }
-          else if (res.data.nome_coordenador) { identityName = res.data.nome_coordenador; roleTitle = 'Coordenador da Loja'; }
-      }
-
-      setNomeLogado(identityName); setPapelLogado(roleTitle); setLoginAtivo(usuario);
-
-      await AsyncStorage.setItem('token', res.data.token); await AsyncStorage.setItem('userRole', res.data.role); await AsyncStorage.setItem('userFilial', res.data.filial);
-      await AsyncStorage.setItem('nomeLogado', identityName); await AsyncStorage.setItem('papelLogado', roleTitle); await AsyncStorage.setItem('loginAtivo', usuario);
-      
-      showToast(`Bem-vindo! Acesso: ${identityName}`, 'success');
-      await carregarDadosBasicos();
-    } catch (error) {
-      setIsOffline(!error.response);
-      showToast(error.response ? 'Credenciais incorretas.' : 'Gateway Offline.', 'error');
-    }
-  };
-
-  const carregarDadosBasicos = useCallback(async () => {
-    try {
-      const [resEq, resNot, resCham, resTec, resFil, resSet] = await Promise.all([
-        api.get('/api/equipamentos'), api.get('/api/notificacoes'), api.get('/api/chamados'),
-        api.get('/api/tecnicos'), api.get('/api/auxiliares/filiais'), api.get('/api/auxiliares/setores')
-      ]);
-      setEquipamentos(resEq.data || []); setChamados(resCham.data || []); setTecnicosDb(resTec.data || []);
-      setFiliaisDb(resFil.data || []); setSetoresDb(resSet.data || []); setIsOffline(false);
-
-      const notifs = resNot.data || [];
-      const idMaisAlto = notifs.length > 0 ? Math.max(...notifs.map(n => n.id)) : 0;
-      
-      if (lastAlertIdRef.current !== -1 && idMaisAlto > lastAlertIdRef.current) {
-        const novos = notifs.filter(n => n.id > lastAlertIdRef.current);
-        if (novos.length > 0) {
-          const isDegelo = novos[0].tipo_alerta === 'DEGELO';
-          
-          if (!isDegelo && somAtivoState) tocarAlarme();
-          
-          // 🔴 APENAS o Toast Visual (removi o Alert.alert que causava a duplicação)
-          showToast(`${isDegelo ? '❄️' : '🚨'} ${novos[0].mensagem}`, isDegelo ? 'info' : 'error');
-        }
-      }
-      lastAlertIdRef.current = idMaisAlto; setNotificacoes(notifs);
-    } catch (error) { setIsOffline(true); }
-  }, [somAtivoState, showToast]);
-
-  useEffect(() => {
-    if (!token) return;
-    const socket = getSocket();
-    const pingInterval = setInterval(() => { socket.emit('medir_latencia', Date.now(), (e) => { setLatencia(Date.now() - e); setIsOffline(false); }); }, 2500);
-    socket.on('disconnect', () => setIsOffline(true));
-    socket.on('atualizacao_dados', () => carregarDadosBasicos());
-    socket.on('nova_leitura', (dadosNova) => {
-      setEquipamentos(prev => prev.map(eq => String(eq.id) === String(dadosNova.equipamento_id) ? { ...eq, ultima_temp: dadosNova.temperatura, ultima_umidade: dadosNova.umidade, motor_ligado: dadosNova.motor_ligado, em_degelo: dadosNova.em_degelo } : eq));
-    });
-    return () => { clearInterval(pingInterval); socket.off('nova_leitura'); socket.off('atualizacao_dados'); };
-  }, [token, carregarDadosBasicos]);
+  const isLoggingOut = useRef(false);
 
   const theme = {
-    bg: isDarkMode ? '#0f172a' : '#f8fafc', card: isDarkMode ? '#1e293b' : '#ffffff',
-    textMain: isDarkMode ? '#f8fafc' : '#0f172a', textMuted: isDarkMode ? '#94a3b8' : '#64748b',
-    border: isDarkMode ? '#334155' : '#e2e8f0', dangerLight: isDarkMode ? '#450a0a' : '#fee2e2',
-    primary: '#059669', success: '#10b981', danger: '#ef4444', warning: '#f59e0b', info: '#38bdf8', alertMech: '#f97316'
+    primary: '#059669', secondary: '#10b981', background: isDarkMode ? '#0f172a' : '#f8fafc',
+    card: isDarkMode ? '#1e293b' : '#ffffff', textMain: isDarkMode ? '#f8fafc' : '#0f172a',
+    textMuted: isDarkMode ? '#94a3b8' : '#64748b', border: isDarkMode ? '#334155' : '#e2e8f0',
+    danger: '#ef4444', success: '#10b981', warning: '#f59e0b', info: '#38bdf8',
   };
+
+  const toggleTheme = () => setIsDarkMode(!isDarkMode);
+  const alternarSom = () => setSomAtivoState(!somAtivoState);
+
+  // 🔴 1. LOGOUT BLINDADO (Sem Dependências Circulares)
+  const logout = useCallback(async () => {
+    isLoggingOut.current = true;
+    setToken(null); setUserId(null); setUserRole(null); setUserFilial(null); setNomeLogado(''); setPapelLogado('');
+    await AsyncStorage.multiRemove(['token', 'userId', 'userRole', 'userFilial', 'nomeLogado', 'papelLogado']);
+    
+    setSocket(prevSocket => {
+      if (prevSocket) prevSocket.disconnect();
+      return null;
+    });
+    
+    setTimeout(() => { isLoggingOut.current = false; }, 1000);
+  }, []);
+
+  const carregarDadosLocais = async () => {
+    try {
+      const t = await AsyncStorage.getItem('token');
+      const id = await AsyncStorage.getItem('userId');
+      const role = await AsyncStorage.getItem('userRole');
+      const filial = await AsyncStorage.getItem('userFilial');
+      const nome = await AsyncStorage.getItem('nomeLogado');
+      const papel = await AsyncStorage.getItem('papelLogado');
+
+      if (t) {
+        setToken(t); setUserId(id); setUserRole(role); setUserFilial(filial); setNomeLogado(nome || 'Utilizador'); setPapelLogado(papel || 'Gestor');
+      }
+    } catch (e) { console.log("Erro ao carregar storage:", e); }
+  };
+
+  useEffect(() => { carregarDadosLocais(); }, []);
+
+  // 🔴 2. INTERCEPTOR OTIMIZADO
+  const api = useMemo(() => {
+    const instance = axios.create({
+      baseURL: API_URL,
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+
+    instance.interceptors.response.use(
+      (response) => response,
+      (error) => {
+        if (error.response && error.response.status === 401) {
+          if (!isLoggingOut.current) {
+            console.log("🔒 Token expirado/inválido. A redirecionar para o Login...");
+            logout();
+          }
+        }
+        return Promise.reject(error);
+      }
+    );
+    return instance;
+  }, [token, logout]);
+
+  const carregarDashboard = useCallback(async () => {
+    if (!token) return;
+    try {
+      const [resEq, resNotif, resContatos, resHist, resFiliais] = await Promise.all([
+        api.get('/equipamentos').catch(() => ({ data: [] })),
+        api.get('/notificacoes').catch(() => ({ data: [] })),
+        api.get('/contatos').catch(() => ({ data: [] })),
+        api.get('/chat/historico').catch(() => ({ data: [] })),
+        api.get('/auxiliares/filiais').catch(() => ({ data: [] }))
+      ]);
+      setEquipamentos(resEq.data);
+      setNotificacoes(resNotif.data);
+      setContatosDb(resContatos.data);
+      setHistoricoChat(resHist.data);
+      if (resFiliais.data && resFiliais.data.length > 0) setFiliaisDb(resFiliais.data);
+    } catch (e) {}
+  }, [token, api]);
+
+  useEffect(() => {
+    if (token) carregarDashboard();
+  }, [token, carregarDashboard]);
+
+  // 🔴 3. WEBSOCKET ISOLADO DO CICLO DO DASHBOARD
+  useEffect(() => {
+    if (!token || !userId) return;
+
+    const newSocket = io(SOCKET_URL);
+    setSocket(newSocket);
+
+    newSocket.emit('registrar_usuario', userId);
+
+    newSocket.on('nova_leitura', () => carregarDashboard());
+    newSocket.on('atualizacao_dados', () => carregarDashboard());
+
+    newSocket.on('nova_mensagem_chat', (msg) => {
+      setHistoricoChat(prev => {
+        if ((prev || []).some(m => String(m.id) === String(msg.id))) return prev;
+        return [...(prev || []), { ...msg, tipo: 'received' }];
+      });
+      setNaoLidasPorContato(prev => ({
+        ...prev,
+        [msg.remetenteId]: (prev[msg.remetenteId] || 0) + 1
+      }));
+    });
+
+    newSocket.on('chamada_recebida', (data) => {
+      setChamadaAtiva({ peer: { id: data.remetenteId, nome: data.remetenteNome }, state: 'incoming' });
+    });
+    newSocket.on('chamada_atendida', () => setChamadaAtiva(prev => prev ? { ...prev, state: 'active' } : null));
+    newSocket.on('chamada_recusada', () => setChamadaAtiva(null));
+    newSocket.on('chamada_terminada', () => setChamadaAtiva(null));
+
+    const pingInterval = setInterval(() => {
+      newSocket.emit('medir_latencia', Date.now(), (timestamp) => {
+        setLatencia(Date.now() - timestamp);
+      });
+    }, 3000);
+
+    return () => {
+      clearInterval(pingInterval);
+      newSocket.disconnect();
+    }
+  }, [token, userId, carregarDashboard]);
 
   return (
     <AppContext.Provider value={{
-      token, userRole, userFilial, filialAtiva, setFilialAtiva, theme, isDarkMode, 
-      CUSTO_KWH_REAIS, FATOR_EMISSAO_CO2, nomeLogado, papelLogado, loginAtivo,
-      equipamentos, notificacoes, chamados, tecnicosDb, filiaisDb, setoresDb, 
-      carregarDadosBasicos, fazerLogin, isOffline, latencia, somAtivoState, alternarSom, showToast,
-      toggleTheme: async () => { const val = !isDarkMode; setIsDarkMode(val); await AsyncStorage.setItem('theme', val ? 'dark' : 'light'); },
-      logout: async () => { await AsyncStorage.clear(); setToken(null); }
+      token, setToken, userId, setUserId, userRole, setUserRole, userFilial, setUserFilial, nomeLogado, setNomeLogado, papelLogado, setPapelLogado,
+      equipamentos, notificacoes, carregarDashboard, api, logout,
+      socket, contatosDb, historicoChat, setHistoricoChat, naoLidasPorContato, setNaoLidasPorContato, chamadaAtiva, setChamadaAtiva,
+      filialAtiva, setFilialAtiva, filiaisDb,
+      isDarkMode, toggleTheme, theme, somAtivoState, alternarSom, latencia, isOffline
     }}>
-      {!loading && children}
-
-      {toast.show && (
-        <Animated.View style={[
-          styles.toastContainer, 
-          { opacity: fadeAnim },
-          toast.type === 'error' ? styles.toastError : (toast.type === 'info' ? styles.toastInfo : styles.toastSuccess)
-        ]}>
-          <MaterialCommunityIcons 
-            name={toast.type === 'error' ? 'alert-circle' : (toast.type === 'info' ? 'information' : 'check-circle')} 
-            size={24} color="#ffffff" style={{ marginRight: 10 }} 
-          />
-          <Text style={styles.toastText}>{toast.message}</Text>
-        </Animated.View>
-      )}
+      {children}
     </AppContext.Provider>
   );
 };
-
-const styles = StyleSheet.create({
-  toastContainer: {
-    position: 'absolute',
-    bottom: 50,
-    alignSelf: 'center',
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    borderRadius: 12,
-    elevation: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.3,
-    shadowRadius: 5,
-    maxWidth: '90%',
-    zIndex: 99999,
-    borderLeftWidth: 4,
-    borderLeftColor: 'rgba(255,255,255,0.5)'
-  },
-  toastSuccess: { backgroundColor: '#10b981' },
-  toastError: { backgroundColor: '#ef4444' },
-  toastInfo: { backgroundColor: '#38bdf8' },
-  toastText: { color: '#ffffff', fontSize: 14, fontWeight: 'bold', flexShrink: 1, lineHeight: 20 }
-});

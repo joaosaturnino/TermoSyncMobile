@@ -1,389 +1,244 @@
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import React, { useContext, useEffect, useState, useMemo } from 'react';
-import { Alert, FlatList, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import api from '../api/api';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { useContext, useMemo, useState } from 'react';
+import { KeyboardAvoidingView, Modal, Platform, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { AppContext } from '../context/AppContext';
 
-export default function ChamadosScreen() {
-  const { theme } = useContext(AppContext);
-  const [chamados, setChamados] = useState([]);
-  const [equipamentos, setEquipamentos] = useState([]);
-  const [tecnicos, setTecnicos] = useState([]);
+export default function ChamadosScreen({ navigation }) {
+  const { userRole, filialAtiva, nomeLogado, chamados = [], tecnicosDb = [], equipamentos, api, carregarDashboard, isOffline, nomeGerente, nomeCoordenador } = useContext(AppContext);
   
-  // Filtros FIEIS À WEB
-  const [filtroTempoOS, setFiltroTempoOS] = useState('todos');
   const [tecnicoFiltroOS, setTecnicoFiltroOS] = useState('todos');
+  const [filtroTempoOS, setFiltroTempoOS] = useState('todos');
   
-  // Dados de Sessão
-  const [userRole, setUserRole] = useState('LOJA');
-  const [nomeLogado, setNomeLogado] = useState('');
-  const [nomeGerente, setNomeGerente] = useState('');
-  const [nomeCoordenador, setNomeCoordenador] = useState('');
+  const [modalChamado, setModalChamado] = useState(false);
+  const [formChamado, setFormChamado] = useState({ equipamento_id: '', descricao: '', solicitante_nome: '', tecnico_responsavel: '' });
+  const [modalResolver, setModalResolver] = useState({ isOpen: false, chamadoId: null, nota: '' });
 
-  // Modais
-  const [modalVisible, setModalVisible] = useState(false);
-  const [form, setForm] = useState({ equipamento_id: '', descricao: '', solicitante_nome: '', tecnico_responsavel: '' });
+  const equipamentosDaFilial = useMemo(() => {
+    return filialAtiva === 'Todas' ? equipamentos : (equipamentos || []).filter(e => e.filial === filialAtiva);
+  }, [equipamentos, filialAtiva]);
 
-  const [modalResolucao, setModalResolucao] = useState(false);
-  const [chamadoAResolver, setChamadoAResolver] = useState(null);
-  const [notaResolucao, setNotaResolucao] = useState('');
-
-  const [modalUrgenciaVisible, setModalUrgenciaVisible] = useState(false);
-  const [chamadoUrgenciaId, setChamadoUrgenciaId] = useState(null);
-
-  useEffect(() => {
-    carregarDadosSessao();
-    carregarChamados();
-    carregarEquipamentos();
-    carregarTecnicos();
-  }, []);
-
-  const carregarDadosSessao = async () => {
-    setUserRole(await AsyncStorage.getItem('userRole') || 'LOJA');
-    setNomeLogado(await AsyncStorage.getItem('nomeLogado') || '');
-    setNomeGerente(await AsyncStorage.getItem('nome_gerente') || '');
-    setNomeCoordenador(await AsyncStorage.getItem('nome_coordenador') || '');
-  };
-
-  const carregarChamados = async () => {
-    try { const res = await api.get('/api/chamados'); setChamados(res.data); } catch(e) {}
-  };
-
-  const carregarEquipamentos = async () => {
-    try { const res = await api.get('/api/equipamentos'); setEquipamentos(res.data); } catch(e) {}
-  };
-
-  const carregarTecnicos = async () => {
-    try { const res = await api.get('/api/tecnicos'); setTecnicos(res.data); } catch(e) {}
-  };
-
-  // Lógica de 30 dias idêntica à Web
-  const trintaDiasAtras = useMemo(() => {
-    const data = new Date(); data.setDate(data.getDate() - 30); return data;
-  }, []);
-
-  // Lista base (Apenas os não concluídos ou concluídos há menos de 30 dias)
-  const chamadosAtivos = useMemo(() => {
-     return chamados.filter(c => c.status !== 'Concluído' || new Date(c.data_conclusao) >= trintaDiasAtras);
-  }, [chamados, trintaDiasAtras]);
-
-  // Lista Filtrada para a Tela
-  const chamadosFiltrados = useMemo(() => {
-    let list = chamadosAtivos;
-
-    // Filtro por Técnico
-    if (userRole === 'MANUTENCAO') {
-       list = list.filter(c => c.tecnico_responsavel === nomeLogado);
-    } else {
-       if (tecnicoFiltroOS !== 'todos') list = list.filter(c => c.tecnico_responsavel === tecnicoFiltroOS);
-    }
-
-    // Filtro por Tempo
+  const chamadosAtivosFiltrados = useMemo(() => {
+    const trintaDiasAtras = new Date(); trintaDiasAtras.setDate(trintaDiasAtras.getDate() - 30);
+    let list = (chamados || []).filter(c => c.status !== 'Concluído' || new Date(c.data_conclusao) >= trintaDiasAtras);
+    
+    if (userRole === 'ADMIN' && filialAtiva !== 'Todas') list = list.filter(c => c.filial === filialAtiva);
+    if (userRole === 'MANUTENCAO') list = list.filter(c => c.tecnico_responsavel === nomeLogado);
+    else if (tecnicoFiltroOS !== 'todos') list = list.filter(c => c.tecnico_responsavel === tecnicoFiltroOS);
+    
     const hoje = new Date();
-    if (filtroTempoOS === 'dia') list = list.filter(c => new Date(c.data_conclusao || c.data_abertura).toDateString() === hoje.toDateString());
-    else if (filtroTempoOS === 'semana') {
-       const seteDias = new Date(hoje.getTime() - 7 * 24 * 60 * 60 * 1000);
-       list = list.filter(c => new Date(c.data_conclusao || c.data_abertura) >= seteDias);
-    } else if (filtroTempoOS === 'mes') {
-       list = list.filter(c => new Date(c.data_conclusao || c.data_abertura) >= trintaDiasAtras);
-    }
-
+    if (filtroTempoOS === 'dia') list = list.filter(c => new Date(c.data_abertura).toDateString() === hoje.toDateString() || (c.data_conclusao && new Date(c.data_conclusao).toDateString() === hoje.toDateString()));
+    else if (filtroTempoOS === 'semana') { const seteDias = new Date(hoje.getTime() - 7 * 24 * 60 * 60 * 1000); list = list.filter(c => new Date(c.data_abertura) >= seteDias || (c.data_conclusao && new Date(c.data_conclusao) >= seteDias)); }
+    else if (filtroTempoOS === 'mes') { const mesAtras = new Date(hoje.getTime() - 30 * 24 * 60 * 60 * 1000); list = list.filter(c => new Date(c.data_abertura) >= mesAtras || (c.data_conclusao && new Date(c.data_conclusao) >= mesAtras)); }
+    
     return list;
-  }, [chamadosAtivos, tecnicoFiltroOS, filtroTempoOS, userRole, nomeLogado, trintaDiasAtras]);
+  }, [chamados, filialAtiva, userRole, nomeLogado, tecnicoFiltroOS, filtroTempoOS]);
 
-
-  const abrirNovaOS = () => {
-    if (equipamentos.length === 0) return Alert.alert('Aviso', 'Não existem equipamentos registados nesta unidade.');
-
-    let solicitanteAuto = 'Equipa da Loja';
-    if (userRole === 'ADMIN') solicitanteAuto = 'Administração Central';
-    else if (nomeGerente) solicitanteAuto = `Gerente - ${nomeGerente}`;
-    else if (nomeCoordenador) solicitanteAuto = `Coordenador - ${nomeCoordenador}`;
-
-    setForm({ equipamento_id: equipamentos[0].id, descricao: '', solicitante_nome: solicitanteAuto, tecnico_responsavel: '' });
-    setModalVisible(true);
+  const abrirModalNovoChamado = () => {
+    if (!equipamentosDaFilial || equipamentosDaFilial.length === 0) {
+      alert("Não existem equipamentos nesta unidade."); return;
+    }
+    let solicitanteAuto = userRole === 'ADMIN' ? 'Administração Central' : (nomeGerente ? `Gerente - ${nomeGerente}` : (nomeCoordenador ? `Coordenador - ${nomeCoordenador}` : 'Equipe da Loja'));
+    setFormChamado({ equipamento_id: equipamentosDaFilial[0].id, descricao: '', solicitante_nome: solicitanteAuto, tecnico_responsavel: '' }); 
+    setModalChamado(true);
   };
 
-  const submeterOS = async () => {
-    if (!form.equipamento_id) return Alert.alert('Erro', 'Selecione uma máquina.');
-    if (!form.descricao) return Alert.alert('Erro', 'Por favor, descreva a avaria.');
-    try {
-      await api.post('/api/chamados', form);
-      Alert.alert('Sucesso', 'Ordem de Serviço (OS) enviada!');
-      setModalVisible(false); carregarChamados();
-    } catch(e) { Alert.alert('Erro', 'Falha ao submeter a Ordem de Serviço.'); }
+  const salvarNovoChamado = async () => {
+    if (isOffline) return alert('Ação bloqueada offline.');
+    if (!formChamado.equipamento_id || !formChamado.descricao) return alert('Preencha a máquina e a descrição.');
+    try { 
+      await api.post('/chamados', formChamado); 
+      setModalChamado(false); 
+      carregarDashboard(); 
+    } catch (err) { alert('Erro ao abrir chamado.'); }
   };
 
   const concluirChamado = async () => {
-    if (!notaResolucao) return Alert.alert('Aviso', 'A Nota de Resolução é obrigatória.');
+    if (isOffline) return alert('Ação bloqueada offline.');
+    if (!modalResolver.nota.trim()) return alert('A nota de resolução é obrigatória.');
     try {
-      await api.put(`/api/chamados/${chamadoAResolver}/status`, { status: 'Concluído', nota_resolucao: notaResolucao });
-      Alert.alert('Sucesso', 'Intervenção registada e OS concluída!');
-      setModalResolucao(false); setNotaResolucao(''); carregarChamados();
-    } catch(e) { Alert.alert('Erro', 'Falha ao concluir o chamado.'); }
+      await api.put(`/chamados/${modalResolver.chamadoId}/status`, { status: 'Concluído', nota_resolucao: modalResolver.nota });
+      setModalResolver({ isOpen: false, chamadoId: null, nota: '' });
+      carregarDashboard();
+    } catch (err) { alert('Erro ao concluir o chamado.'); }
   };
 
-  const atualizarUrgencia = async (novaUrgencia) => {
-    try {
-      await api.put(`/api/chamados/${chamadoUrgenciaId}/urgencia`, { urgencia: novaUrgencia });
-      setModalUrgenciaVisible(false); carregarChamados();
-    } catch(e) { Alert.alert('Erro', 'Falha ao atualizar urgência.'); }
-  };
-
-  const imprimirLote = () => {
-    if (chamadosFiltrados.length === 0) return Alert.alert('Aviso', 'Não há chamados para imprimir com os filtros atuais.');
-    Alert.alert('Impressão Iniciada', `A gerar documento com ${chamadosFiltrados.length} OS para envio...`);
+  const getUrgencyColor = (urgencia, status) => {
+    if (status === 'Concluído') return '#10b981'; // Success
+    switch (urgencia) {
+      case 'Crítica': return '#ef4444'; // Danger
+      case 'Alta': return '#f97316';    // Orange
+      case 'Média': return '#f59e0b';   // Warning
+      default: return '#38bdf8';        // Info
+    }
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.bg }]}>
-      
+    <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-          <Text style={{ fontSize: 18, fontWeight: '900', color: theme.textMain }}>Central de OS</Text>
+        <TouchableOpacity onPress={() => navigation.openDrawer()} style={{ padding: 5 }}>
+          <Ionicons name="menu" size={28} color="#059669" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Manutenção Corretiva</Text>
+        <View style={{ width: 28 }} />
+      </View>
+
+      <View style={styles.filtersContainer}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 15, gap: 10 }}>
+          <TouchableOpacity style={[styles.filterBtn, filtroTempoOS === 'todos' && styles.filterBtnActive]} onPress={() => setFiltroTempoOS('todos')}><Text style={[styles.filterBtnText, filtroTempoOS === 'todos' && styles.filterBtnTextActive]}>Todos</Text></TouchableOpacity>
+          <TouchableOpacity style={[styles.filterBtn, filtroTempoOS === 'dia' && styles.filterBtnActive]} onPress={() => setFiltroTempoOS('dia')}><Text style={[styles.filterBtnText, filtroTempoOS === 'dia' && styles.filterBtnTextActive]}>Hoje</Text></TouchableOpacity>
+          <TouchableOpacity style={[styles.filterBtn, filtroTempoOS === 'semana' && styles.filterBtnActive]} onPress={() => setFiltroTempoOS('semana')}><Text style={[styles.filterBtnText, filtroTempoOS === 'semana' && styles.filterBtnTextActive]}>7 Dias</Text></TouchableOpacity>
+          
           {userRole !== 'MANUTENCAO' && (
-            <TouchableOpacity style={[styles.btnNova, { backgroundColor: theme.primary }]} onPress={abrirNovaOS}>
-              <MaterialCommunityIcons name="plus-circle" size={18} color="#fff" />
-              <Text style={styles.btnNovaText}>Nova OS</Text>
+            <TouchableOpacity style={styles.btnPrimaryHeader} onPress={abrirModalNovoChamado}>
+              <MaterialCommunityIcons name="message-plus" size={16} color="#fff" />
+              <Text style={styles.btnPrimaryHeaderText}>Abrir Chamado</Text>
             </TouchableOpacity>
           )}
+        </ScrollView>
       </View>
 
-      {/* FILTROS AVANÇADOS IGUAIS À WEB */}
-      <View style={{ marginBottom: 15 }}>
-         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
-            <TouchableOpacity style={styles.btnImprimir} onPress={imprimirLote}>
-               <MaterialCommunityIcons name="printer" size={16} color="#3b82f6" />
-               <Text style={{ color: '#3b82f6', fontWeight: 'bold', marginLeft: 6, fontSize: 12 }}>Imprimir ({chamadosFiltrados.length})</Text>
-            </TouchableOpacity>
-
-            {userRole !== 'MANUTENCAO' && (
-              <>
-                <TouchableOpacity onPress={() => setTecnicoFiltroOS('todos')} style={[styles.chipFiltro, tecnicoFiltroOS === 'todos' && { backgroundColor: theme.primary, borderColor: theme.primary }]}>
-                    <Text style={{ color: tecnicoFiltroOS === 'todos' ? '#fff' : theme.textMuted, fontSize: 12, fontWeight: 'bold' }}>Todos Técnicos</Text>
-                </TouchableOpacity>
-                {tecnicos.map(t => (
-                  <TouchableOpacity key={t.id} onPress={() => setTecnicoFiltroOS(t.nome_tecnico)} style={[styles.chipFiltro, tecnicoFiltroOS === t.nome_tecnico && { backgroundColor: theme.primary, borderColor: theme.primary }]}>
-                      <Text style={{ color: tecnicoFiltroOS === t.nome_tecnico ? '#fff' : theme.textMuted, fontSize: 12, fontWeight: 'bold' }}>{t.nome_tecnico}</Text>
-                  </TouchableOpacity>
-                ))}
-              </>
-            )}
-         </ScrollView>
-
-         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {[ {id: 'todos', label: 'Todo o Período'}, {id: 'dia', label: 'Apenas Hoje'}, {id: 'semana', label: 'Últimos 7 Dias'}, {id: 'mes', label: 'Últimos 30 Dias'} ].map(t => (
-               <TouchableOpacity key={t.id} onPress={() => setFiltroTempoOS(t.id)} style={[styles.chipFiltro, filtroTempoOS === t.id && { backgroundColor: theme.textMain, borderColor: theme.textMain }]}>
-                  <Text style={{ color: filtroTempoOS === t.id ? theme.bg : theme.textMuted, fontSize: 12, fontWeight: 'bold' }}>{t.label}</Text>
-               </TouchableOpacity>
-            ))}
-         </ScrollView>
-      </View>
-
-      <FlatList
-        data={chamadosFiltrados}
-        keyExtractor={i => i.id.toString()}
-        showsVerticalScrollIndicator={false}
-        ListEmptyComponent={() => (
-           <View style={{alignItems: 'center', marginTop: 50}}>
-               <MaterialCommunityIcons name="check-circle" size={60} color={theme.success} style={{opacity: 0.5}}/>
-               <Text style={{color: theme.textMuted, marginTop: 10, fontWeight: 'bold'}}>Nenhuma OS pendente.</Text>
-           </View>
-        )}
-        renderItem={({item}) => {
-          const isConcluido = item.status === 'Concluído';
-          const corBorda = isConcluido ? theme.success : (item.urgencia === 'Crítica' || item.urgencia === 'Alta' ? theme.danger : theme.warning);
-
-          return (
-            <View style={[styles.card, { backgroundColor: theme.card, borderLeftWidth: 6, borderLeftColor: corBorda }]}>
-              
-              <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center'}}>
-                  <Text style={[styles.cardTitle, { color: theme.textMain, flex: 1 }]} numberOfLines={1}>{item.equipamento_nome}</Text>
-                  <View style={[styles.badge, {backgroundColor: isConcluido ? theme.success : (item.status === 'Em Atendimento' ? theme.primary : '#64748b')}]}>
-                      <Text style={{color: '#fff', fontSize: 11, fontWeight: 'bold'}}>{item.status}</Text>
+      <ScrollView contentContainerStyle={styles.listContainer}>
+        {chamadosAtivosFiltrados.length === 0 ? (
+          <View style={styles.emptyState}>
+            <MaterialCommunityIcons name="check-decagram" size={64} color="#10b981" style={{ opacity: 0.8 }} />
+            <Text style={styles.emptyTitle}>Sem Ocorrências</Text>
+            <Text style={styles.emptySub}>A central de máquinas está saudável.</Text>
+          </View>
+        ) : (
+          chamadosAtivosFiltrados.map(c => {
+            const colorTheme = getUrgencyColor(c.urgencia, c.status);
+            return (
+              <View key={c.id} style={[styles.ticketCard, { borderBottomColor: colorTheme }]}>
+                <View style={styles.ticketHeader}>
+                  <View style={styles.ticketTitleBox}>
+                    <MaterialCommunityIcons name="wrench" size={20} color={colorTheme} />
+                    <Text style={styles.ticketEquip}>{c.equipamento_nome}</Text>
                   </View>
-              </View>
-              
-              <Text style={{ color: theme.textMain, fontSize: 14, marginVertical: 12, fontWeight: '500', fontStyle: 'italic' }}>
-                "{item.descricao}"
-              </Text>
-              
-              <Text style={{ color: theme.textMuted, fontSize: 13, marginBottom: 4 }}>
-                Loja: <Text style={{fontWeight: 'bold'}}>{item.filial}</Text> | Solicitante: <Text style={{fontWeight: 'bold'}}>{item.solicitante_nome || item.aberto_por}</Text>
-              </Text>
-              
-              <Text style={{ color: theme.primary, fontSize: 13, fontWeight: 'bold', marginBottom: 4 }}>
-                Técnico Acionado: {item.tecnico_responsavel || 'Manutenção Geral'}
-              </Text>
-
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
-                <Text style={{ color: theme.textMuted, fontSize: 13 }}>Urgência definida: </Text>
-                <Text style={{ fontWeight: 'bold', color: item.urgencia === 'Crítica' || item.urgencia === 'Alta' ? theme.danger : theme.warning }}>
-                  {item.urgencia}
-                </Text>
-              </View>
-
-              {isConcluido && (
-                <View style={{ marginTop: 8, padding: 12, backgroundColor: 'rgba(16, 185, 129, 0.1)', borderRadius: 8, borderWidth: 1, borderColor: 'rgba(16, 185, 129, 0.2)' }}>
-                  <Text style={{ fontSize: 13, fontWeight: 'bold', color: theme.success }}>Nota de Resolução:</Text>
-                  <Text style={{ fontSize: 13, color: theme.textMain, marginTop: 4 }}>{item.nota_resolucao}</Text>
-                  <Text style={{ fontSize: 11, color: 'gray', marginTop: 6 }}>Concluído em: {new Date(item.data_conclusao).toLocaleDateString()}</Text>
+                  <View style={[styles.statusBadge, { backgroundColor: `${colorTheme}15`, borderColor: `${colorTheme}40` }]}>
+                    <Text style={[styles.statusText, { color: colorTheme }]}>{c.status}</Text>
+                  </View>
                 </View>
-              )}
 
-              {userRole === 'ADMIN' && !isConcluido && (
-                 <TouchableOpacity 
-                    style={{ padding: 10, borderWidth: 1, borderColor: theme.border, borderRadius: 8, marginBottom: 10, alignItems: 'center' }}
-                    onPress={() => { setChamadoUrgenciaId(item.id); setModalUrgenciaVisible(true); }}>
-                    <Text style={{ fontSize: 12, color: theme.textMain, fontWeight: 'bold' }}>Alterar Urgência (Atual: {item.urgencia})</Text>
-                 </TouchableOpacity>
-              )}
+                <View style={styles.ticketDescBox}>
+                  <Text style={styles.ticketDescText}>"{c.descricao}"</Text>
+                </View>
 
-              {(userRole === 'ADMIN' || userRole === 'MANUTENCAO') && !isConcluido && (
-                <TouchableOpacity 
-                   style={[styles.btnConcluir, { borderColor: theme.success }]} 
-                   onPress={() => { setChamadoAResolver(item.id); setModalResolucao(true); }}>
-                  <MaterialCommunityIcons name="check-circle" size={18} color={theme.success} />
-                  <Text style={{ color: theme.success, fontWeight: 'bold', marginLeft: 6 }}>Marcar como Corrigido</Text>
-                </TouchableOpacity>
-              )}
+                <View style={styles.ticketMetaGrid}>
+                  <View style={styles.metaRow}><MaterialCommunityIcons name="map-marker" size={14} color="#64748b" /><Text style={styles.metaText}>Loja: <Text style={styles.metaBold}>{c.filial}</Text></Text></View>
+                  <View style={styles.metaRow}><MaterialCommunityIcons name="account" size={14} color="#64748b" /><Text style={styles.metaText}>Solicitante: <Text style={styles.metaBold}>{c.solicitante_nome || c.aberto_por}</Text></Text></View>
+                  <View style={styles.metaRow}><MaterialCommunityIcons name="wrench-clock" size={14} color={c.status !== 'Concluído' ? '#38bdf8' : '#64748b'} /><Text style={styles.metaText}>Técnico: <Text style={styles.metaBold}>{c.tecnico_responsavel || 'Geral'}</Text></Text></View>
+                  {c.status !== 'Concluído' && <View style={styles.metaRow}><MaterialCommunityIcons name="alert-circle" size={14} color={colorTheme} /><Text style={styles.metaText}>Urgência: <Text style={{fontWeight: 'bold', color: colorTheme}}>{c.urgencia}</Text></Text></View>}
+                </View>
+
+                {c.status === 'Concluído' && (
+                  <View style={styles.resolucaoBox}>
+                    <Text style={styles.resolucaoTitle}><MaterialCommunityIcons name="check-all" size={16} /> Nota de Resolução:</Text>
+                    <Text style={styles.resolucaoText}>{c.nota_resolucao}</Text>
+                  </View>
+                )}
+
+                {c.status !== 'Concluído' && (userRole === 'ADMIN' || userRole === 'MANUTENCAO') && (
+                  <TouchableOpacity style={styles.btnConcluir} onPress={() => setModalResolver({ isOpen: true, chamadoId: c.id, nota: '' })}>
+                    <MaterialCommunityIcons name="check-circle-outline" size={18} color="#10b981" />
+                    <Text style={styles.btnConcluirText}>Marcar como Corrigido</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            );
+          })
+        )}
+      </ScrollView>
+
+      {/* Modal Novo Chamado */}
+      <Modal visible={modalChamado} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalContent}>
+            <Text style={styles.modalTitle}><MaterialCommunityIcons name="wrench" size={20} color="#059669" /> Nova Ordem de Serviço</Text>
+            
+            <Text style={styles.inputLabel}>Equipamento</Text>
+            <View style={styles.selectFake}>
+              <Text style={styles.selectFakeText}>{equipamentosDaFilial?.find(e => e.id === formChamado.equipamento_id)?.nome || 'Selecione...'}</Text>
             </View>
-          );
-        }}
-      />
-
-      {/* MODAL DE ABERTURA DE NOVA OS */}
-      <Modal visible={modalVisible} transparent animationType="slide">
-         <View style={styles.modalContainer}>
-            <View style={[styles.modalContent, { backgroundColor: theme.card, borderColor: theme.border }]}>
-               <Text style={[styles.modalTitle, { color: theme.textMain }]}>Nova Ordem de Serviço</Text>
-               
-               <ScrollView style={{maxHeight: '80%', marginTop: 15}} showsVerticalScrollIndicator={false}>
-                 
-                 <Text style={styles.label}>Máquina / Equipamento com Avaria</Text>
-                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{marginBottom: 15}}>
-                    {equipamentos.map(eq => (
-                        <TouchableOpacity key={eq.id} onPress={() => setForm({...form, equipamento_id: eq.id})} style={[styles.chip, form.equipamento_id === eq.id && { backgroundColor: theme.primary, borderColor: theme.primary }]}>
-                            <Text style={{ color: form.equipamento_id === eq.id ? '#fff' : theme.textMuted, fontSize: 12, fontWeight: 'bold' }}>
-                              {userRole === 'ADMIN' ? `[${eq.filial}] ` : ''}{eq.nome}
-                            </Text>
-                        </TouchableOpacity>
-                    ))}
-                 </ScrollView>
-
-                 <Text style={styles.label}>Descrição do Problema Encontrado</Text>
-                 <TextInput 
-                    style={[styles.input, { color: theme.textMain, borderColor: theme.border, height: 90, textAlignVertical: 'top' }]} 
-                    multiline 
-                    value={form.descricao} 
-                    onChangeText={t => setForm({...form, descricao: t})} 
-                    placeholder="Ex: O compressor está a fazer um ruído estranho..." 
-                 />
-                 
-                 <Text style={styles.label}>Nome do Solicitante (Automático)</Text>
-                 <TextInput 
-                    style={[styles.input, { color: theme.textMuted, borderColor: theme.border, backgroundColor: 'rgba(0,0,0,0.05)' }]} 
-                    value={form.solicitante_nome} 
-                    editable={false} 
-                 />
-
-                 <Text style={styles.label}>Atribuir a Técnico Específico (Opcional)</Text>
-                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{marginBottom: 15}}>
-                    <TouchableOpacity onPress={() => setForm({...form, tecnico_responsavel: ''})} style={[styles.chip, form.tecnico_responsavel === '' && { backgroundColor: theme.primary, borderColor: theme.primary }]}>
-                        <Text style={{ color: form.tecnico_responsavel === '' ? '#fff' : theme.textMuted, fontSize: 12, fontWeight: 'bold' }}>Deixar em aberto</Text>
-                    </TouchableOpacity>
-                    {tecnicos.map(t => (
-                        <TouchableOpacity key={t.id} onPress={() => setForm({...form, tecnico_responsavel: t.nome_tecnico})} style={[styles.chip, form.tecnico_responsavel === t.nome_tecnico && { backgroundColor: theme.primary, borderColor: theme.primary }]}>
-                            <Text style={{ color: form.tecnico_responsavel === t.nome_tecnico ? '#fff' : theme.textMuted, fontSize: 12, fontWeight: 'bold' }}>{t.nome_tecnico}</Text>
-                        </TouchableOpacity>
-                    ))}
-                 </ScrollView>
-
-               </ScrollView>
-               <View style={styles.modalActions}>
-                 <TouchableOpacity style={styles.btnCancel} onPress={() => setModalVisible(false)}><Text style={{color: theme.textMuted, fontWeight: 'bold'}}>Cancelar</Text></TouchableOpacity>
-                 <TouchableOpacity style={[styles.btnSave, {backgroundColor: theme.primary}]} onPress={submeterOS}>
-                    <MaterialCommunityIcons name="content-save" size={16} color="#fff" style={{marginRight: 6}}/>
-                    <Text style={{color:'#fff', fontWeight:'bold'}}>Submeter OS</Text>
-                 </TouchableOpacity>
-               </View>
+            
+            <Text style={styles.inputLabel}>Descrição do Problema</Text>
+            <TextInput style={styles.textArea} multiline numberOfLines={3} placeholder="Ex: O compressor está a fazer um ruído..." value={formChamado.descricao} onChangeText={t => setFormChamado({...formChamado, descricao: t})} />
+            
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={styles.btnCancel} onPress={() => setModalChamado(false)}><Text style={styles.btnCancelText}>Cancelar</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.btnConfirm} onPress={salvarNovoChamado}><Text style={styles.btnConfirmText}>Abrir Chamado</Text></TouchableOpacity>
             </View>
-         </View>
+          </KeyboardAvoidingView>
+        </View>
       </Modal>
 
-      {/* MODAL DE CONCLUSÃO DE OS (PARA TÉCNICOS/ADMIN) */}
-      <Modal visible={modalResolucao} transparent animationType="fade">
-         <View style={styles.modalContainer}>
-            <View style={[styles.modalContent, { backgroundColor: theme.card, borderColor: theme.border }]}>
-               <Text style={[styles.modalTitle, { color: theme.textMain, marginBottom: 15 }]}>Relatório Técnico</Text>
-               <Text style={styles.label}>Escreva a Nota de Resolução do reparo:</Text>
-               <TextInput 
-                  style={[styles.input, { color: theme.textMain, borderColor: theme.border, height: 100, textAlignVertical: 'top' }]} 
-                  multiline 
-                  value={notaResolucao} 
-                  onChangeText={setNotaResolucao} 
-                  placeholder="Ex: Carga de gás aplicada e compressor limpo." 
-               />
-               <View style={styles.modalActions}>
-                 <TouchableOpacity style={styles.btnCancel} onPress={() => { setModalResolucao(false); setNotaResolucao(''); }}><Text style={{color: theme.textMuted, fontWeight: 'bold'}}>Cancelar</Text></TouchableOpacity>
-                 <TouchableOpacity style={[styles.btnSave, {backgroundColor: theme.success}]} onPress={concluirChamado}><Text style={{color:'#fff', fontWeight:'bold'}}>Assinar Conclusão</Text></TouchableOpacity>
-               </View>
+      {/* Modal Concluir Chamado */}
+      <Modal visible={modalResolver.isOpen} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalContent}>
+            <Text style={styles.modalTitle}><MaterialCommunityIcons name="check-decagram" size={22} color="#10b981" /> Concluir Chamado</Text>
+            <Text style={styles.modalSub}>Descreva a intervenção técnica realizada para manter o histórico.</Text>
+            <TextInput style={styles.textArea} multiline numberOfLines={4} placeholder="Ex: Substituição da válvula solenoide..." value={modalResolver.nota} onChangeText={n => setModalResolver({...modalResolver, nota: n})} />
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={styles.btnCancel} onPress={() => setModalResolver({ isOpen: false, chamadoId: null, nota: '' })}><Text style={styles.btnCancelText}>Cancelar</Text></TouchableOpacity>
+              <TouchableOpacity style={[styles.btnConfirm, {backgroundColor: '#10b981'}]} onPress={concluirChamado}><Text style={styles.btnConfirmText}>Concluir e Arquivar</Text></TouchableOpacity>
             </View>
-         </View>
+          </KeyboardAvoidingView>
+        </View>
       </Modal>
-
-      {/* MODAL PARA ALTERAR URGÊNCIA (ADMIN) */}
-      <Modal visible={modalUrgenciaVisible} transparent animationType="fade">
-         <View style={styles.modalContainer}>
-            <View style={[styles.modalContent, { backgroundColor: theme.card, borderColor: theme.border }]}>
-               <Text style={[styles.modalTitle, { color: theme.textMain, marginBottom: 15 }]}>Definir Urgência</Text>
-               
-               {['Baixa', 'Média', 'Alta', 'Crítica'].map(nivel => (
-                 <TouchableOpacity 
-                   key={nivel}
-                   style={{ padding: 15, borderBottomWidth: 1, borderColor: theme.border }}
-                   onPress={() => atualizarUrgencia(nivel)}
-                 >
-                   <Text style={{ fontSize: 16, fontWeight: 'bold', color: nivel === 'Crítica' || nivel === 'Alta' ? theme.danger : theme.warning, textAlign: 'center' }}>
-                     {nivel}
-                   </Text>
-                 </TouchableOpacity>
-               ))}
-
-               <TouchableOpacity style={{ marginTop: 15, padding: 15 }} onPress={() => setModalUrgenciaVisible(false)}>
-                 <Text style={{ textAlign: 'center', color: theme.textMuted, fontWeight: 'bold' }}>Cancelar</Text>
-               </TouchableOpacity>
-            </View>
-         </View>
-      </Modal>
-
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 15 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
-  btnNova: { flexDirection: 'row', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, alignItems:'center' },
-  btnNovaText: { color: '#fff', fontWeight: 'bold', marginLeft: 6, fontSize: 13 },
+  container: { flex: 1, backgroundColor: '#f8fafc' },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 15, backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#e2e8f0', paddingTop: Platform.OS === 'ios' ? 50 : 15 },
+  headerTitle: { fontSize: 18, fontWeight: '900', color: '#0f172a' },
+  filtersContainer: { paddingVertical: 15, backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#e2e8f0' },
+  filterBtn: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: '#f1f5f9', borderWidth: 1, borderColor: '#e2e8f0' },
+  filterBtnActive: { backgroundColor: '#059669', borderColor: '#059669' },
+  filterBtnText: { color: '#64748b', fontWeight: 'bold', fontSize: 13 },
+  filterBtnTextActive: { color: '#fff' },
+  btnPrimaryHeader: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#059669', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, gap: 6 },
+  btnPrimaryHeaderText: { color: '#fff', fontWeight: 'bold', fontSize: 13 },
   
-  btnImprimir: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(59, 130, 246, 0.1)', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: '#3b82f6', marginRight: 8 },
-  chipFiltro: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: '#e2e8f0', marginRight: 8 },
+  listContainer: { padding: 15, paddingBottom: 40 },
+  emptyState: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60 },
+  emptyTitle: { fontSize: 18, fontWeight: '900', color: '#0f172a', marginTop: 15 },
+  emptySub: { fontSize: 14, color: '#64748b', textAlign: 'center', marginTop: 5, fontWeight: '500' },
+
+  ticketCard: { backgroundColor: '#fff', borderRadius: 16, padding: 20, marginBottom: 15, borderBottomWidth: 4, elevation: 3, shadowColor: '#000', shadowOffset: {width: 0, height: 4}, shadowOpacity: 0.05 },
+  ticketHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 15 },
+  ticketTitleBox: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 },
+  ticketEquip: { fontSize: 16, fontWeight: '900', color: '#0f172a' },
+  statusBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, borderWidth: 1 },
+  statusText: { fontSize: 10, fontWeight: '900', textTransform: 'uppercase' },
   
-  card: { padding: 18, borderRadius: 12, marginBottom: 15, elevation: 2 },
-  cardTitle: { fontSize: 16, fontWeight: '900' },
-  badge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 },
-  btnConcluir: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 10, padding: 12, borderWidth: 1, borderRadius: 8 },
+  ticketDescBox: { backgroundColor: 'rgba(0,0,0,0.02)', borderLeftWidth: 3, borderLeftColor: '#e2e8f0', padding: 12, borderRadius: 8, marginBottom: 15 },
+  ticketDescText: { fontSize: 14, fontStyle: 'italic', color: '#334155', lineHeight: 20 },
   
-  modalContainer: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: 15 },
-  modalContent: { padding: 20, borderRadius: 16, borderWidth: 1 },
-  modalTitle: { fontSize: 18, fontWeight: '900' },
-  
-  label: { fontSize: 12, fontWeight: 'bold', color: '#64748b', marginBottom: 6 },
-  input: { borderWidth: 1, borderRadius: 8, padding: 12, marginBottom: 15, fontSize: 14 },
-  chip: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 20, borderWidth: 1, borderColor: '#e2e8f0', marginRight: 8 },
-  
-  modalActions: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 10, gap: 10, borderTopWidth: 1, borderColor: 'rgba(0,0,0,0.1)', paddingTop: 15 },
-  btnCancel: { padding: 12 },
-  btnSave: { paddingVertical: 12, paddingHorizontal: 16, borderRadius: 8, flexDirection: 'row', alignItems: 'center' }
+  ticketMetaGrid: { gap: 8, marginBottom: 15 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  metaText: { fontSize: 12, color: '#64748b' },
+  metaBold: { fontWeight: '700', color: '#0f172a' },
+
+  resolucaoBox: { marginTop: 10, padding: 12, borderRadius: 10, backgroundColor: 'rgba(16, 185, 129, 0.08)', borderWidth: 1, borderColor: 'rgba(16, 185, 129, 0.3)', borderStyle: 'dashed' },
+  resolucaoTitle: { color: '#10b981', fontWeight: '800', fontSize: 12, marginBottom: 6, display: 'flex', alignItems: 'center' },
+  resolucaoText: { fontSize: 13, color: '#0f172a', fontWeight: '500' },
+
+  btnConcluir: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#10b981', marginTop: 10 },
+  btnConcluirText: { color: '#10b981', fontWeight: '800', fontSize: 13 },
+
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 },
+  modalContent: { backgroundColor: '#fff', borderRadius: 20, padding: 25 },
+  modalTitle: { fontSize: 18, fontWeight: '900', color: '#0f172a', marginBottom: 15 },
+  modalSub: { fontSize: 13, color: '#64748b', marginBottom: 15, fontWeight: '500' },
+  inputLabel: { fontSize: 12, fontWeight: '800', color: '#64748b', marginBottom: 6, textTransform: 'uppercase' },
+  selectFake: { backgroundColor: '#f1f5f9', padding: 14, borderRadius: 10, marginBottom: 15 },
+  selectFakeText: { color: '#0f172a', fontWeight: '600' },
+  textArea: { backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 12, padding: 15, minHeight: 100, textAlignVertical: 'top', fontSize: 14, marginBottom: 20 },
+  modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10 },
+  btnCancel: { padding: 12, borderRadius: 10 },
+  btnCancelText: { color: '#64748b', fontWeight: '800' },
+  btnConfirm: { backgroundColor: '#059669', paddingHorizontal: 20, paddingVertical: 12, borderRadius: 10 },
+  btnConfirmText: { color: '#fff', fontWeight: '800' }
 });

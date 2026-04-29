@@ -1,7 +1,7 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { DrawerContentScrollView, DrawerItemList } from '@react-navigation/drawer';
-import React, { useContext, useState } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View, LayoutAnimation, Platform, UIManager } from 'react-native';
+import { useContext, useState } from 'react';
+import { LayoutAnimation, Platform, StyleSheet, Text, TouchableOpacity, UIManager, View } from 'react-native';
 import { AppContext } from '../context/AppContext';
 
 // Ativar animações de layout no Android
@@ -140,7 +140,6 @@ const styles = StyleSheet.create({
   profileName: { color: '#ffffff', fontSize: 16, fontWeight: 'bold' },
   profileRole: { color: 'rgba(255,255,255,0.8)', fontSize: 11, fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 0.5 },
   
-  /* Estilos do Seletor Melhorado */
   lojaSelectorContainer: { paddingHorizontal: 15, marginBottom: 15, paddingBottom: 15, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.1)' },
   selectorLabel: { color: 'rgba(255,255,255,0.7)', fontSize: 10, fontWeight: '900', letterSpacing: 1, marginBottom: 8, marginLeft: 5 },
   
@@ -185,7 +184,7 @@ const styles = StyleSheet.create({
     elevation: 2
   },
   dropdownItemText: { 
-    color: '#cbd5e1', // Cor do texto inativo baseada no App.css
+    color: '#cbd5e1', 
     fontSize: 13, 
     fontWeight: '600', 
     marginLeft: 10,

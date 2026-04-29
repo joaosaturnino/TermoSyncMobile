@@ -1,119 +1,157 @@
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-import React, { useContext, useEffect, useState } from 'react';
-import { Alert, FlatList, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import api from '../api/api';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { useContext, useState } from 'react';
+import { KeyboardAvoidingView, Modal, Platform, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { AppContext } from '../context/AppContext';
 
-export default function LojasScreen() {
-  const { theme, carregarDadosBasicos } = useContext(AppContext);
-  const [lojas, setLojas] = useState([]);
-  const [modalVisible, setModalVisible] = useState(false);
+export default function GestaoLojasScreen({ navigation }) {
+  const { filiaisDb, api, carregarDashboard } = useContext(AppContext);
   
-  const [form, setForm] = useState({ id: '', filial: '', endereco_loja: '', telefone_loja: '' });
+  const [modalLoja, setModalLoja] = useState(false);
+  const [formLoja, setFormLoja] = useState({ nome: '', endereco_loja: '', telefone_loja: '' });
 
-  useEffect(() => { carregarLojas(); }, []);
+  // Como o filiaisDb no teu AppContext apenas guarda os Nomes das lojas, criamos um mock visual premium:
+  const lojasFormatadas = (filiaisDb || []).map((nomeLoja, i) => ({
+    id: i, nome: nomeLoja, endereco: 'Endereço em atualização...', telefone: 'N/A',
+    nome_gerente: 'Pendente', nome_coordenador: 'Pendente'
+  }));
 
-  const carregarLojas = async () => {
-    try { const res = await api.get('/api/lojas'); setLojas(res.data); } catch(e) {}
-  };
-
-  const salvar = async () => {
-    if (!form.filial) return Alert.alert('Aviso', 'O nome da loja é obrigatório.');
+  const salvarLoja = async () => {
+    if (!formLoja.nome) return alert('O nome da loja é obrigatório.');
     try {
-      if (form.id) {
-        await api.put(`/api/lojas/${form.id}`, form);
-        Alert.alert('Sucesso', 'Loja atualizada. Os equipamentos foram sincronizados!');
-      } else {
-        await api.post('/api/cadastrar-loja', form);
-        Alert.alert('Sucesso', 'Nova Loja registada!');
-      }
-      setModalVisible(false); carregarLojas(); carregarDadosBasicos();
-    } catch(e) { Alert.alert('Erro', 'Falha ao guardar loja.'); }
-  };
-
-  const deletar = (id, nome) => {
-    Alert.alert('Aviso de Risco', `Apagar a loja "${nome}" vai ELIMINAR TODOS os equipamentos, utilizadores e históricos vinculados a ela. Continuar?`, [
-      { text: 'Cancelar', style: 'cancel' },
-      { text: 'Sim, Apagar Tudo', style: 'destructive', onPress: async () => { await api.delete(`/api/lojas/${id}`); carregarLojas(); carregarDadosBasicos(); } }
-    ]);
+      await api.post('/lojas', formLoja);
+      setModalLoja(false);
+      carregarDashboard();
+      alert('Loja cadastrada com sucesso!');
+    } catch(err) { alert('Erro ao cadastrar loja.'); }
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.bg }]}>
+    <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-          <Text style={{ fontSize: 18, fontWeight: '900', color: theme.textMain }}>Unidades / Lojas</Text>
-          <TouchableOpacity style={[styles.btnNova, { backgroundColor: theme.primary }]} onPress={() => { setForm({ id: '', filial: '', endereco_loja: '', telefone_loja: '' }); setModalVisible(true); }}>
-            <MaterialCommunityIcons name="plus-circle" size={18} color="#fff" />
-            <Text style={styles.btnNovaText}>Nova Loja</Text>
-          </TouchableOpacity>
+        <TouchableOpacity onPress={() => navigation.openDrawer()} style={{ padding: 5 }}>
+          <Ionicons name="menu" size={28} color="#059669" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Gestão de Lojas</Text>
+        <View style={{ width: 28 }} />
       </View>
 
-      <FlatList
-        data={lojas}
-        keyExtractor={i => i.id.toString()}
-        renderItem={({item}) => (
-          <View style={[styles.card, { backgroundColor: theme.card }]}>
-            <Text style={[styles.cardTitle, { color: theme.textMain }]}>{item.nome}</Text>
-            <Text style={{ color: theme.textMuted, fontSize: 13, marginTop: 4 }}><MaterialCommunityIcons name="map-marker" size={14}/> {item.endereco}</Text>
-            <Text style={{ color: theme.textMuted, fontSize: 13, marginTop: 2 }}><MaterialCommunityIcons name="phone" size={14}/> {item.telefone}</Text>
+      <ScrollView contentContainerStyle={styles.listContainer}>
+        
+        <View style={styles.topActions}>
+          <TouchableOpacity style={styles.btnNewStore} onPress={() => { setFormLoja({nome:'', endereco_loja:'', telefone_loja:''}); setModalLoja(true); }}>
+            <MaterialCommunityIcons name="store-plus" size={20} color="#fff" />
+            <Text style={styles.btnNewStoreText}>Cadastrar Nova Loja</Text>
+          </TouchableOpacity>
+        </View>
 
-            <View style={[styles.actions, { borderTopColor: theme.border }]}>
-              <TouchableOpacity style={[styles.actionBtn, {borderColor: theme.border}]} onPress={() => { 
-                setForm({ id: item.id, filial: item.nome, endereco_loja: item.endereco, telefone_loja: item.telefone }); 
-                setModalVisible(true); 
-              }}>
-                <MaterialCommunityIcons name="pencil" size={20} color={theme.primary}/>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.actionBtn, {borderColor: theme.border}]} onPress={() => deletar(item.id, item.nome)}>
-                <MaterialCommunityIcons name="delete" size={20} color={theme.danger}/>
-              </TouchableOpacity>
-            </View>
+        {lojasFormatadas.length === 0 ? (
+          <View style={styles.emptyState}>
+            <MaterialCommunityIcons name="domain" size={64} color="#059669" style={{ opacity: 0.5 }} />
+            <Text style={styles.emptyTitle}>Nenhuma Loja Registada</Text>
+            <Text style={styles.emptySub}>Adiciona a primeira filial ao sistema.</Text>
           </View>
-        )}
-      />
+        ) : (
+          lojasFormatadas.map((loja, idx) => (
+            <View key={idx} style={styles.lojaCard}>
+              <View style={styles.lojaHeader}>
+                <View style={styles.lojaTitleBox}>
+                  <View style={styles.iconBox}><MaterialCommunityIcons name="storefront" size={22} color="#059669" /></View>
+                  <Text style={styles.lojaName}>{loja.nome}</Text>
+                </View>
+                <TouchableOpacity style={styles.btnEdit}><MaterialCommunityIcons name="pencil" size={18} color="#3b82f6" /></TouchableOpacity>
+              </View>
 
-      <Modal visible={modalVisible} transparent animationType="slide">
-         <View style={styles.modalContainer}>
-            <View style={[styles.modalContent, { backgroundColor: theme.card, borderColor: theme.border }]}>
-               <Text style={[styles.modalTitle, { color: theme.textMain, marginBottom: 15 }]}>{form.id ? 'Editar Unidade' : 'Nova Unidade'}</Text>
-               <ScrollView style={{maxHeight: '80%'}}>
-                 
-                 <Text style={styles.label}>Nome Oficial da Loja / Filial</Text>
-                 <TextInput style={[styles.input, { color: theme.textMain, borderColor: theme.border }]} value={form.filial} onChangeText={t => setForm({...form, filial: t})} placeholder="Ex: Loja Lisboa Centro" />
-                 
-                 <Text style={styles.label}>Endereço Completo</Text>
-                 <TextInput style={[styles.input, { color: theme.textMain, borderColor: theme.border }]} value={form.endereco_loja} onChangeText={t => setForm({...form, endereco_loja: t})} placeholder="Ex: Rua Augusta, 123" />
+              <View style={styles.leadershipBox}>
+                <View style={styles.leaderBadgeManager}>
+                  <MaterialCommunityIcons name="account-tie" size={14} color="#10b981" />
+                  <Text style={styles.leaderTextManager}>Gerente: {loja.nome_gerente}</Text>
+                </View>
+                <View style={styles.leaderBadgeCoord}>
+                  <MaterialCommunityIcons name="account-hard-hat" size={14} color="#38bdf8" />
+                  <Text style={styles.leaderTextCoord}>Coord: {loja.nome_coordenador}</Text>
+                </View>
+              </View>
 
-                 <Text style={styles.label}>Contato / Telefone</Text>
-                 <TextInput style={[styles.input, { color: theme.textMain, borderColor: theme.border }]} value={form.telefone_loja} onChangeText={t => setForm({...form, telefone_loja: t})} placeholder="Ex: +351 912 345 678" />
-
-               </ScrollView>
-               <View style={styles.modalActions}>
-                 <TouchableOpacity style={styles.btnCancel} onPress={() => setModalVisible(false)}><Text style={{color: theme.textMuted, fontWeight: 'bold'}}>Cancelar</Text></TouchableOpacity>
-                 <TouchableOpacity style={[styles.btnSave, {backgroundColor: theme.primary}]} onPress={salvar}><Text style={{color:'#fff', fontWeight:'bold'}}>Salvar Unidade</Text></TouchableOpacity>
-               </View>
+              <View style={styles.contactBox}>
+                <View style={styles.contactLine}>
+                  <Ionicons name="location" size={14} color="#64748b" />
+                  <Text style={styles.contactText}>{loja.endereco}</Text>
+                </View>
+                <View style={styles.contactLine}>
+                  <Ionicons name="call" size={14} color="#64748b" />
+                  <Text style={styles.contactText}>{loja.telefone}</Text>
+                </View>
+              </View>
             </View>
-         </View>
+          ))
+        )}
+      </ScrollView>
+
+      {/* Modal Nova Loja */}
+      <Modal visible={modalLoja} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalContent}>
+            <Text style={styles.modalTitle}><MaterialCommunityIcons name="store" size={22} color="#059669" /> Registar Filial</Text>
+            
+            <Text style={styles.inputLabel}>Nome Comercial</Text>
+            <TextInput style={styles.input} placeholder="Ex: Supermercado Central" value={formLoja.nome} onChangeText={t => setFormLoja({...formLoja, nome: t})} />
+            
+            <Text style={styles.inputLabel}>Endereço Completo</Text>
+            <TextInput style={styles.input} placeholder="Rua, Número, Cidade" value={formLoja.endereco_loja} onChangeText={t => setFormLoja({...formLoja, endereco_loja: t})} />
+            
+            <Text style={styles.inputLabel}>Contato Telefónico</Text>
+            <TextInput style={styles.input} placeholder="Ex: 210 000 000" keyboardType="phone-pad" value={formLoja.telefone_loja} onChangeText={t => setFormLoja({...formLoja, telefone_loja: t})} />
+            
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={styles.btnCancel} onPress={() => setModalLoja(false)}><Text style={styles.btnCancelText}>Cancelar</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.btnConfirm} onPress={salvarLoja}><Text style={styles.btnConfirmText}>Cadastrar</Text></TouchableOpacity>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
       </Modal>
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 15 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
-  btnNova: { flexDirection: 'row', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, alignItems:'center' },
-  btnNovaText: { color: '#fff', fontWeight: 'bold', marginLeft: 6, fontSize: 13 },
-  card: { padding: 18, borderRadius: 12, marginBottom: 15, elevation: 2 },
-  cardTitle: { fontSize: 17, fontWeight: '900' },
-  actions: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 15, borderTopWidth: 1, paddingTop: 15, gap: 12 },
-  actionBtn: { padding: 8, borderWidth: 1, borderRadius: 8 },
-  modalContainer: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: 15 },
-  modalContent: { padding: 20, borderRadius: 16, borderWidth: 1 },
-  modalTitle: { fontSize: 18, fontWeight: '900' },
-  label: { fontSize: 12, fontWeight: 'bold', color: '#64748b', marginBottom: 6 },
-  input: { borderWidth: 1, borderRadius: 8, padding: 12, marginBottom: 10, fontSize: 14 },
-  modalActions: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 20, gap: 10, borderTopWidth: 1, borderColor: 'rgba(0,0,0,0.1)', paddingTop: 15 },
-  btnCancel: { padding: 12 },
-  btnSave: { paddingVertical: 12, paddingHorizontal: 16, borderRadius: 8 }
+  container: { flex: 1, backgroundColor: '#f8fafc' },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 15, backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#e2e8f0', paddingTop: Platform.OS === 'ios' ? 50 : 15 },
+  headerTitle: { fontSize: 18, fontWeight: '900', color: '#0f172a' },
+  listContainer: { padding: 15, paddingBottom: 40 },
+  
+  topActions: { flexDirection: 'row', justifyContent: 'flex-end', marginBottom: 20 },
+  btnNewStore: { backgroundColor: '#059669', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, borderRadius: 12, gap: 8, elevation: 3 },
+  btnNewStoreText: { color: '#fff', fontWeight: '900', fontSize: 14 },
+
+  emptyState: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60 },
+  emptyTitle: { fontSize: 18, fontWeight: '900', color: '#0f172a', marginTop: 15 },
+  emptySub: { fontSize: 14, color: '#64748b', textAlign: 'center', marginTop: 5, fontWeight: '500' },
+
+  lojaCard: { backgroundColor: '#fff', borderRadius: 16, padding: 20, marginBottom: 15, elevation: 2, shadowColor: '#000', shadowOffset: {width: 0, height: 2}, shadowOpacity: 0.05, borderWidth: 1, borderColor: '#f1f5f9' },
+  lojaHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15, paddingBottom: 15, borderBottomWidth: 1, borderColor: '#f1f5f9' },
+  lojaTitleBox: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  iconBox: { backgroundColor: 'rgba(5, 150, 105, 0.1)', padding: 10, borderRadius: 12 },
+  lojaName: { fontSize: 17, fontWeight: '900', color: '#0f172a' },
+  btnEdit: { backgroundColor: 'rgba(59, 130, 246, 0.08)', padding: 8, borderRadius: 8 },
+  
+  leadershipBox: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 15 },
+  leaderBadgeManager: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(16, 185, 129, 0.1)', borderWidth: 1, borderColor: 'rgba(16, 185, 129, 0.2)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
+  leaderTextManager: { fontSize: 11, fontWeight: '800', color: '#10b981' },
+  leaderBadgeCoord: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(56, 189, 248, 0.1)', borderWidth: 1, borderColor: 'rgba(56, 189, 248, 0.2)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
+  leaderTextCoord: { fontSize: 11, fontWeight: '800', color: '#38bdf8' },
+  
+  contactBox: { gap: 8, backgroundColor: '#f8fafc', padding: 12, borderRadius: 10 },
+  contactLine: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  contactText: { fontSize: 13, color: '#475569', fontWeight: '600' },
+
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalContent: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 25, paddingBottom: Platform.OS === 'ios' ? 40 : 25 },
+  modalTitle: { fontSize: 20, fontWeight: '900', color: '#0f172a', marginBottom: 20 },
+  inputLabel: { fontSize: 12, fontWeight: '800', color: '#64748b', marginBottom: 6, textTransform: 'uppercase' },
+  input: { backgroundColor: '#f1f5f9', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 12, padding: 15, marginBottom: 15, color: '#0f172a', fontWeight: '600' },
+  modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 10 },
+  btnCancel: { padding: 14, borderRadius: 12 },
+  btnCancelText: { color: '#64748b', fontWeight: '800' },
+  btnConfirm: { backgroundColor: '#059669', paddingHorizontal: 24, paddingVertical: 14, borderRadius: 12, elevation: 2 },
+  btnConfirmText: { color: '#fff', fontWeight: '900' }
 });

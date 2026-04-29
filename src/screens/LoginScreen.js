@@ -1,116 +1,205 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import axios from 'axios';
 import { useContext, useState } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { AppContext } from '../context/AppContext';
 
+// 🔴 MUITO IMPORTANTE: O mesmo IP!
+const API_URL = 'http://192.168.200.27:3000/api';
+
 export default function LoginScreen() {
-  const { fazerLogin, isOffline } = useContext(AppContext);
+  const { setToken, setUserId, setUserRole, setUserFilial, setNomeLogado, setPapelLogado } = useContext(AppContext);
+  
   const [usuario, setUsuario] = useState('');
   const [senha, setSenha] = useState('');
   const [loading, setLoading] = useState(false);
+  const [mostrarSenha, setMostrarSenha] = useState(false);
 
-  const handleLogin = async () => {
-    if (!usuario || !senha) return;
+  const fazerLogin = async () => {
+    if (!usuario || !senha) {
+      Alert.alert('Erro', 'Por favor, preencha o utilizador e a palavra-passe.');
+      return;
+    }
+
     setLoading(true);
-    await fazerLogin(usuario, senha);
-    setLoading(false);
+    try {
+      // 1. Faz o pedido ao Backend
+      const res = await axios.post(`${API_URL}/login`, { usuario, senha });
+      const dados = res.data;
+      
+      // 2. Define o cargo/nome formatado
+      let identityName = usuario; 
+      let roleTitle = 'Gestor de Loja';
+      
+      if (dados.role === 'ADMIN') { 
+        identityName = 'Administrador'; roleTitle = 'Acesso Master'; 
+      } else if (dados.role === 'MANUTENCAO') { 
+        identityName = dados.nome_tecnico || 'Técnico'; roleTitle = 'Manutenção Global'; 
+      } else if (dados.role === 'LOJA') { 
+        if (dados.nome_gerente) { identityName = dados.nome_gerente; roleTitle = 'Gerente da Loja'; } 
+        else if (dados.nome_coordenador) { identityName = dados.nome_coordenador; roleTitle = 'Coordenador da Loja'; } 
+        else { identityName = 'Equipa Geral'; roleTitle = 'Acesso da Loja'; } 
+      }
+
+      // 3. Guarda os dados fisicamente na memória do telemóvel
+      await AsyncStorage.multiSet([
+        ['token', dados.token],
+        ['userId', String(dados.id)],
+        ['userRole', dados.role],
+        ['userFilial', dados.filial],
+        ['nomeLogado', identityName],
+        ['papelLogado', roleTitle]
+      ]);
+
+      // 4. Atualiza o Contexto
+      // (O token tem de ser o último a ser atualizado para evitar que a app salte de ecrã sem os outros dados)
+      setUserId(dados.id);
+      setUserRole(dados.role);
+      setUserFilial(dados.filial);
+      setNomeLogado(identityName);
+      setPapelLogado(roleTitle);
+      
+      setToken(dados.token); // Isto aciona a navegação para o Dashboard!
+
+    } catch (error) {
+      console.log("Erro no login:", error.message);
+      Alert.alert('Acesso Negado', 'Credenciais inválidas ou servidor offline.\n\nVerifique se colocou o IP correto no código!');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <KeyboardAvoidingView 
-      behavior={Platform.OS === "ios" ? "padding" : "height"} 
-      style={styles.container}
+      style={styles.container} 
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <ScrollView 
-        contentContainerStyle={styles.scrollContainer} 
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.loginBox}>
-          <View style={styles.logoContainer}>
-            <View style={styles.logoCircle}>
-              <MaterialCommunityIcons name="snowflake" size={50} color="#059669" />
-            </View>
-            <Text style={styles.title}>TermoSync</Text>
-            <Text style={styles.subtitle}>O clima do seu negócio na palma da mão.</Text>
-          </View>
+      <View style={styles.card}>
+        <View style={styles.logoContainer}>
+          <MaterialCommunityIcons name="snowflake" size={50} color="#059669" />
+          <Text style={styles.title}>TermoSync</Text>
+          <Text style={styles.subtitle}>Enterprise Mobile</Text>
+        </View>
 
-          {isOffline && (
-            <View style={styles.offlineWarning}>
-              <MaterialCommunityIcons name="wifi-off" size={16} color="#ef4444" />
-              <Text style={styles.offlineText}>Sem ligação ao servidor. Verifique a rede.</Text>
-            </View>
-          )}
+        <View style={styles.inputContainer}>
+          <MaterialCommunityIcons name="account" size={20} color="#64748b" style={styles.inputIcon} />
+          <TextInput
+            style={styles.input}
+            placeholder="Nome de Utilizador"
+            placeholderTextColor="#94a3b8"
+            value={usuario}
+            onChangeText={setUsuario}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+        </View>
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Credencial de Acesso</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Ex: admin_master"
-              placeholderTextColor="#94a3b8"
-              value={usuario}
-              onChangeText={setUsuario}
-              autoCapitalize="none"
-              autoCorrect={false}
-              showSoftInputOnFocus={true} // Força o teclado virtual no Tablet
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Palavra-passe</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="••••••••"
-              placeholderTextColor="#94a3b8"
-              secureTextEntry
-              value={senha}
-              onChangeText={setSenha}
-              autoCapitalize="none"
-              showSoftInputOnFocus={true} // Força o teclado virtual no Tablet
-            />
-          </View>
-
-          <TouchableOpacity 
-            style={styles.btn} 
-            onPress={handleLogin} 
-            disabled={loading}
-          >
-            {loading ? <ActivityIndicator color="#ffffff" /> : <Text style={styles.btnText}>Autenticar</Text>}
+        <View style={styles.inputContainer}>
+          <MaterialCommunityIcons name="lock" size={20} color="#64748b" style={styles.inputIcon} />
+          <TextInput
+            style={styles.input}
+            placeholder="Palavra-passe"
+            placeholderTextColor="#94a3b8"
+            value={senha}
+            onChangeText={setSenha}
+            secureTextEntry={!mostrarSenha}
+            autoCapitalize="none"
+          />
+          <TouchableOpacity onPress={() => setMostrarSenha(!mostrarSenha)} style={{ padding: 10 }}>
+            <MaterialCommunityIcons name={mostrarSenha ? "eye-off" : "eye"} size={20} color="#64748b" />
           </TouchableOpacity>
         </View>
-      </ScrollView>
+
+        <TouchableOpacity 
+          style={styles.loginBtn} 
+          onPress={fazerLogin} 
+          disabled={loading}
+          activeOpacity={0.8}
+        >
+          {loading ? (
+            <ActivityIndicator color="#ffffff" />
+          ) : (
+            <Text style={styles.loginBtnText}>Entrar no Sistema</Text>
+          )}
+        </TouchableOpacity>
+      </View>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
-    backgroundColor: '#064e3b' 
-  },
-  scrollContainer: {
-    flexGrow: 1,
+  container: {
+    flex: 1,
+    backgroundColor: '#059669', // Fundo Verde
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20
   },
-  loginBox: { 
-    backgroundColor: '#ffffff', 
-    width: '100%', 
-    maxWidth: 400, 
-    borderRadius: 16, 
-    padding: 30, 
-    elevation: 10 
+  card: {
+    backgroundColor: '#ffffff',
+    width: '85%',
+    maxWidth: 400,
+    borderRadius: 24,
+    padding: 30,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 10,
   },
-  logoContainer: { alignItems: 'center', marginBottom: 20 },
-  logoCircle: { backgroundColor: '#f8fafc', padding: 15, borderRadius: 50, marginBottom: 15, elevation: 5 },
-  title: { fontSize: 32, fontWeight: '900', color: '#059669', marginBottom: 5, letterSpacing: -1 },
-  subtitle: { fontSize: 14, color: '#64748b', fontWeight: '600' },
-  offlineWarning: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fee2e2', padding: 10, borderRadius: 8, marginBottom: 20, justifyContent: 'center' },
-  offlineText: { color: '#ef4444', fontSize: 12, fontWeight: 'bold', marginLeft: 8 },
-  inputGroup: { marginBottom: 20 },
-  label: { fontSize: 13, fontWeight: 'bold', color: '#0f172a', marginBottom: 8 },
-  input: { borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 8, padding: 15, fontSize: 16, color: '#0f172a', backgroundColor: '#f8fafc' },
-  btn: { backgroundColor: '#059669', padding: 15, borderRadius: 8, alignItems: 'center', marginTop: 10 },
-  btnText: { color: '#ffffff', fontSize: 16, fontWeight: 'bold' }
+  logoContainer: {
+    alignItems: 'center',
+    marginBottom: 30,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: '900',
+    color: '#0f172a',
+    marginTop: 10,
+  },
+  subtitle: {
+    fontSize: 14,
+    color: '#64748b',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    fontWeight: 'bold',
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f1f5f9',
+    borderRadius: 12,
+    marginBottom: 15,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    width: '100%',
+  },
+  inputIcon: {
+    paddingLeft: 15,
+  },
+  input: {
+    flex: 1,
+    padding: 15,
+    fontSize: 15,
+    color: '#0f172a',
+  },
+  loginBtn: {
+    backgroundColor: '#059669',
+    width: '100%',
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 10,
+    shadowColor: '#059669',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  loginBtnText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  }
 });
