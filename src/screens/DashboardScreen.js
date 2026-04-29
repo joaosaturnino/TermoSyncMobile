@@ -1,282 +1,211 @@
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { Audio } from 'expo-av';
-import { useContext, useEffect, useRef, useState } from 'react';
-import { Animated, Modal, Platform, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { AppContext } from '../context/AppContext';
+import {
+  Activity,
+  AlertOctagon,
+  AlertTriangle,
+  CheckCircle,
+  Clock,
+  Radio,
+  Server, ThermometerSnowflake,
+  Zap
+} from 'lucide-react-native';
+import { useCallback, useMemo, useState } from 'react';
+import {
+  Dimensions,
+  RefreshControl, SafeAreaView,
+  ScrollView, StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
+} from 'react-native';
+
+const { width } = Dimensions.get('window');
+
+// Tema Escuro NOC (Padrão)
+const theme = {
+  bg: '#020617', card: '#0f172a', textMain: '#f8fafc', textMuted: '#94a3b8',
+  border: '#1e293b', primary: '#059669', secondary: '#10b981', danger: '#ef4444',
+  warning: '#f59e0b', info: '#38bdf8'
+};
 
 export default function DashboardScreen({ navigation }) {
-  const { equipamentos, notificacoes, contatosDb, socket, userId, nomeLogado, setHistoricoChat, isOffline } = useContext(AppContext);
+  // Simulando dados (deve substituir pelos dados do seu Context/API)
+  const [refreshing, setRefresh] = useState(false);
+  const [filtroRisco, setFiltroRisco] = useState('TODOS');
   
-  const [chatModalVisible, setChatModalVisivel] = useState(false);
-  const [alertaSelecionado, setAlertaSelecionado] = useState(null);
-  const [contatoDestino, setContatoDestino] = useState('');
-  const [textoEscalonamento, setTextoEscalonamento] = useState('');
+  const qtdTotal = 24; const qtdOperando = 22; const qtdDegelo = 1; const qtdFalha = 1;
+  const notificacoesAtivas = [
+    { id: 1, equipamento_nome: 'CONG-01 Frios', filial: 'Loja Centro', mensagem: 'Temperatura Excedeu Limite (8°C)', tipo_alerta: 'TEMPERATURA', data_hora: new Date() }
+  ];
 
-  // Animação de Pulso para Alertas Críticos
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-
-  useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1.05, duration: 1000, useNativeDriver: true }),
-        Animated.timing(pulseAnim, { toValue: 1, duration: 1000, useNativeDriver: true })
-      ])
-    ).start();
+  const onRefresh = useCallback(() => {
+    setRefresh(true);
+    setTimeout(() => setRefresh(false), 1500);
   }, []);
 
-  // Tocar som em caso de alerta crítico mecânico ou de porta
-  useEffect(() => {
-    const temCritico = (notificacoes || []).some(n => n.tipo_alerta === 'MECANICA' || n.tipo_alerta === 'PORTA');
-    if (temCritico && !isOffline) {
-      tocarSomAlerta();
-    }
-  }, [notificacoes, isOffline]);
-
-  const tocarSomAlerta = async () => {
-    try {
-      const { sound } = await Audio.Sound.createAsync(require('../../assets/sounds/alert.mp3')); // Ajusta o path se necessário
-      await sound.playAsync();
-    } catch (e) {}
-  };
-
-  const equipSeguros = equipamentos || [];
-  const notifSeguras = notificacoes || [];
-  const contatosSeguros = contatosDb || [];
-
-  const qtdTotal = equipSeguros.length;
-  const qtdOperando = equipSeguros.filter(e => e.motor_ligado && !e.em_degelo).length;
-  const qtdDegelo = equipSeguros.filter(e => e.em_degelo).length;
-  const qtdFalha = equipSeguros.filter(e => !e.motor_ligado && !e.em_degelo).length;
-
-  const abrirEscalonamento = (notif) => {
-    setAlertaSelecionado(notif);
-    setTextoEscalonamento(`Emergência técnica: A máquina ${notif.equipamento_nome} (${notif.filial}) registou uma anomalia grave. Solicito verificação.`);
-    setChatModalVisivel(true);
-  };
-
-  const confirmarEscalonamento = () => {
-    if (!contatoDestino) return alert("Selecione um destinatário.");
-    if (!textoEscalonamento.trim()) return;
-
-    const novaMsg = { id: Date.now(), remetenteId: userId, remetenteNome: nomeLogado, destinoId: contatoDestino, texto: textoEscalonamento, data: new Date(), tipo: 'sent' };
-    
-    setHistoricoChat(prev => [...(prev || []), novaMsg]);
-    socket?.emit('enviar_mensagem_chat', novaMsg);
-    
-    setChatModalVisivel(false);
-    navigation.navigate('Chat Interno'); 
-  };
-
-  const getAlertConfig = (tipo) => {
-    switch (tipo) {
-      case 'REDE': return { icon: 'wifi-alert', color: '#f59e0b', action: 'Verificar Nó', critical: false };
-      case 'DEGELO': return { icon: 'snowflake', color: '#38bdf8', action: 'Ocultar Degelo', critical: false };
-      case 'MECANICA': return { icon: 'power-plug-off', color: '#f97316', action: 'Manutenção', critical: true };
-      case 'PORTA': return { icon: 'door-open', color: '#e11d48', action: 'Fechar Porta', critical: true };
-      case 'METROLOGIA': return { icon: 'clipboard-check', color: '#6366f1', action: 'Calibrar', critical: false };
-      default: return { icon: 'alert', color: '#ef4444', action: 'Resolver', critical: true };
-    }
-  };
+  const saudeRede = useMemo(() => {
+    const score = Math.round((qtdOperando / qtdTotal) * 100) || 100;
+    if (score < 80) return { score, status: 'CRÍTICO', color: theme.danger };
+    if (score < 95) return { score, status: 'ATENÇÃO', color: theme.warning };
+    return { score, status: 'ESTÁVEL', color: theme.success };
+  }, [qtdTotal, qtdOperando]);
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.openDrawer()} style={{ padding: 5 }}>
-          <Ionicons name="menu" size={28} color="#059669" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Central de Operações</Text>
-        <View style={{ width: 28 }} />
-      </View>
-
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* ================= CARDS KPI (Resumo) ================= */}
-        <View style={styles.summaryGrid}>
-          <View style={styles.summaryCard}>
-            <View style={styles.summaryHeader}>
-              <Text style={styles.summaryTitle}>Equipamentos</Text>
-              <View style={[styles.iconWrapper, { backgroundColor: 'rgba(100, 116, 139, 0.1)' }]}><MaterialCommunityIcons name="server" size={20} color="#64748b" /></View>
+      <ScrollView 
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />}
+      >
+        {/* ÍNDICE DE SAÚDE DA REDE (SLA ADVANCED) */}
+        <View style={[styles.healthBanner, { borderTopColor: saudeRede.color }]}>
+          <View style={styles.healthHeader}>
+            <View style={styles.healthTitleRow}>
+              <Zap size={24} color={saudeRede.color} />
+              <View style={{ marginLeft: 10 }}>
+                <Text style={styles.healthTitle}>System Health Index</Text>
+                <Text style={styles.healthSubtitle}>Estado Operacional: <Text style={{ color: saudeRede.color, fontWeight: 'bold' }}>{saudeRede.status}</Text></Text>
+              </View>
             </View>
-            <Text style={[styles.summaryValue, { color: '#0f172a' }]}>{qtdTotal}</Text>
+            <Text style={[styles.healthScore, { color: saudeRede.color }]}>{saudeRede.score}%</Text>
           </View>
-
-          <View style={styles.summaryCard}>
-            <View style={styles.summaryHeader}>
-              <Text style={styles.summaryTitle}>Operando</Text>
-              <View style={[styles.iconWrapper, { backgroundColor: 'rgba(16, 185, 129, 0.15)' }]}><MaterialCommunityIcons name="check-circle" size={20} color="#10b981" /></View>
-            </View>
-            <Text style={[styles.summaryValue, { color: '#10b981' }]}>{qtdOperando}</Text>
+          
+          <View style={styles.progressBarBg}>
+            <View style={[styles.progressBarFill, { width: `${saudeRede.score}%`, backgroundColor: saudeRede.color }]} />
           </View>
-
-          <View style={styles.summaryCard}>
-            <View style={styles.summaryHeader}>
-              <Text style={styles.summaryTitle}>Degelo</Text>
-              <View style={[styles.iconWrapper, { backgroundColor: 'rgba(56, 189, 248, 0.15)' }]}><MaterialCommunityIcons name="snowflake-thermometer" size={20} color="#38bdf8" /></View>
-            </View>
-            <Text style={[styles.summaryValue, { color: '#38bdf8' }]}>{qtdDegelo}</Text>
-          </View>
-
-          <View style={styles.summaryCard}>
-            <View style={styles.summaryHeader}>
-              <Text style={styles.summaryTitle}>Anomalias</Text>
-              <View style={[styles.iconWrapper, { backgroundColor: 'rgba(239, 68, 68, 0.15)' }]}><MaterialCommunityIcons name="alert-octagon" size={20} color="#ef4444" /></View>
-            </View>
-            {notifSeguras.length > 0 ? (
-              <Animated.Text style={[styles.summaryValue, { color: '#ef4444', transform: [{ scale: pulseAnim }] }]}>{qtdFalha}</Animated.Text>
-            ) : (
-              <Text style={[styles.summaryValue, { color: '#ef4444' }]}>{qtdFalha}</Text>
-            )}
+          
+          <View style={styles.healthFooter}>
+            <Text style={styles.healthFooterText}>SLA GARANTIDO: 99.98%</Text>
+            <Text style={styles.healthFooterText}>SENSORES ATIVOS: {qtdTotal} NÓS</Text>
           </View>
         </View>
 
-        {/* ================= TRIAGEM DE ALERTAS ================= */}
-        <View style={styles.flexHeader}>
-          <Text style={styles.sectionTitle}>Triagem de Rede</Text>
+        {/* KPIs GERAIS */}
+        <View style={styles.kpiGrid}>
+          <View style={styles.kpiCard}>
+            <View style={styles.kpiHeader}>
+              <Text style={styles.kpiTitle}>Máquinas na Rede</Text>
+              <View style={[styles.kpiIconBg, { backgroundColor: 'rgba(148, 163, 184, 0.1)' }]}><Server size={18} color={theme.textMuted} /></View>
+            </View>
+            <Text style={styles.kpiValue}>{qtdTotal}</Text>
+          </View>
+          
+          <View style={styles.kpiCard}>
+            <View style={styles.kpiHeader}>
+              <Text style={styles.kpiTitle}>Operação Segura</Text>
+              <View style={[styles.kpiIconBg, { backgroundColor: 'rgba(16, 185, 129, 0.1)' }]}><Activity size={18} color={theme.success} /></View>
+            </View>
+            <Text style={[styles.kpiValue, { color: theme.success }]}>{qtdOperando}</Text>
+          </View>
+
+          <View style={styles.kpiCard}>
+            <View style={styles.kpiHeader}>
+              <Text style={styles.kpiTitle}>Ciclos Degelo</Text>
+              <View style={[styles.kpiIconBg, { backgroundColor: 'rgba(56, 189, 248, 0.1)' }]}><ThermometerSnowflake size={18} color={theme.info} /></View>
+            </View>
+            <Text style={[styles.kpiValue, { color: theme.info }]}>{qtdDegelo}</Text>
+          </View>
+
+          <View style={[styles.kpiCard, qtdFalha > 0 && { borderColor: 'rgba(239, 68, 68, 0.5)', borderWidth: 1 }]}>
+            <View style={styles.kpiHeader}>
+              <Text style={styles.kpiTitle}>Ocorrências</Text>
+              <View style={[styles.kpiIconBg, { backgroundColor: 'rgba(239, 68, 68, 0.1)' }]}><AlertOctagon size={18} color={theme.danger} /></View>
+            </View>
+            <Text style={[styles.kpiValue, { color: theme.danger }]}>{qtdFalha}</Text>
+          </View>
         </View>
-        
-        {notifSeguras.length === 0 ? (
-          <View style={styles.dashboardEmpty}>
-            <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
-              <MaterialCommunityIcons name="check-decagram" size={64} color="#10b981" style={{ opacity: 0.8 }} />
-            </Animated.View>
-            <Text style={styles.emptyTitle}>Rede Estável</Text>
-            <Text style={styles.emptySubtitle}>Todos os nós e sensores operam normalmente.</Text>
+
+        {/* TRIAGEM E OCORRÊNCIAS */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Monitor de Incidentes</Text>
+          <TouchableOpacity style={styles.btnResolveAll}>
+            <CheckCircle size={14} color={theme.textMuted} />
+            <Text style={styles.btnResolveAllText}>Normalizar</Text>
+          </TouchableOpacity>
+        </View>
+
+        {notificacoesAtivas.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Radio size={48} color={theme.success} style={{ opacity: 0.8, marginBottom: 15 }} />
+            <Text style={styles.emptyTitle}>Radar Limpo</Text>
+            <Text style={styles.emptySub}>A infraestrutura encontra-se operável e dentro das métricas. Nenhuma anomalia detetada.</Text>
           </View>
         ) : (
-          notifSeguras.map(notif => {
-            const config = getAlertConfig(notif.tipo_alerta);
-            return (
-              <Animated.View key={notif.id} style={[styles.cardAlert, { borderBottomColor: config.color }, config.critical && { transform: [{ scale: pulseAnim }] }]}>
-                <View style={styles.cardTop}>
-                  <View style={styles.alertTitleGroup}>
-                    <View style={[styles.alertIconBox, { backgroundColor: `${config.color}20` }]}>
-                      <MaterialCommunityIcons name={config.icon} size={22} color={config.color} />
-                    </View>
-                    <Text style={styles.alertEquipName}>{notif.equipamento_nome}</Text>
-                  </View>
-                  <View style={[styles.timeBadge, { backgroundColor: `${config.color}15` }]}>
-                    <Text style={styles.timeBadgeText}>{new Date(notif.data_hora).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</Text>
-                  </View>
+          notificacoesAtivas.map(notif => (
+            <View key={notif.id} style={styles.alertCard}>
+              <View style={styles.alertTop}>
+                <View style={styles.alertIconBox}>
+                  <AlertTriangle size={20} color={theme.danger} />
                 </View>
-                
-                <View style={styles.badgesContainer}>
-                  <Text style={styles.badgeSetor}>{notif.filial}</Text>
-                  <Text style={styles.badgeSetor}>{notif.setor}</Text>
+                <View style={styles.alertInfo}>
+                  <Text style={styles.alertEquip}>{notif.equipamento_nome}</Text>
+                  <Text style={styles.alertFilial}>{notif.filial}</Text>
                 </View>
-                
-                <Text style={styles.alertMsg}>{notif.mensagem}</Text>
-                
-                <View style={styles.alertActions}>
-                  <TouchableOpacity style={[styles.btnAlertAction, { backgroundColor: config.color }]} disabled={isOffline}>
-                    <Text style={styles.btnAlertActionText}>{config.action}</Text>
-                  </TouchableOpacity>
-                  
-                  {config.critical && (
-                    <TouchableOpacity style={styles.btnChatInternal} onPress={() => abrirEscalonamento(notif)}>
-                      <MaterialCommunityIcons name="message-processing" size={20} color="#fff" />
-                    </TouchableOpacity>
-                  )}
-                </View>
-              </Animated.View>
-            );
-          })
-        )}
-      </ScrollView>
-
-      {/* ================= MODAL CHAT INTERNO ================= */}
-      <Modal visible={chatModalVisible} transparent animationType="slide">
-        <View style={styles.chatOverlay}>
-          <View style={styles.chatPanel}>
-            <View style={styles.chatPanelHeader}>
-              <View>
-                <Text style={styles.chatPanelTitle}>Escalonar Alerta</Text>
-                <Text style={styles.chatPanelSubtitle}>{alertaSelecionado?.equipamento_nome} • {alertaSelecionado?.filial}</Text>
               </View>
-              <TouchableOpacity onPress={() => setChatModalVisivel(false)} style={styles.btnCloseChat}>
-                <Ionicons name="close" size={24} color="#fff" />
-              </TouchableOpacity>
+              <Text style={styles.alertMsg}>{notif.mensagem}</Text>
+              <View style={styles.alertFooter}>
+                <View style={styles.timeRow}>
+                  <Clock size={12} color={theme.textMuted} />
+                  <Text style={styles.timeText}>{new Date().toLocaleTimeString().slice(0,5)}</Text>
+                </View>
+                <TouchableOpacity style={styles.btnActionAlert}>
+                  <Text style={styles.btnActionText}>Verificar</Text>
+                </TouchableOpacity>
+              </View>
             </View>
-            
-            <View style={styles.chatPanelBody}>
-              <Text style={styles.chatLabel}>1. Selecionar Destinatário</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.contactScroll}>
-                {contatosSeguros.map(c => (
-                  <TouchableOpacity key={c.id} style={[styles.contatoSelectBtn, contatoDestino === c.id && styles.contatoSelected]} onPress={() => setContatoDestino(c.id)}>
-                    <Text style={[styles.contatoSelectText, contatoDestino === c.id && { color: '#fff' }]}>{c.nome}</Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
+          ))
+        )}
 
-              <Text style={styles.chatLabel}>2. Detalhes da Emergência</Text>
-              <TextInput 
-                style={styles.chatTextarea} 
-                multiline 
-                value={textoEscalonamento} 
-                onChangeText={setTextoEscalonamento} 
-              />
-
-              <TouchableOpacity style={styles.btnConfirmChat} onPress={confirmarEscalonamento}>
-                <Ionicons name="send" size={18} color="#fff" style={{ marginRight: 8 }} />
-                <Text style={styles.btnConfirmChatText}>Abrir Bate-Papo</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f8fafc' },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 15, backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#e2e8f0', paddingTop: Platform.OS === 'ios' ? 50 : 15 },
-  headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#0f172a' },
+  container: { flex: 1, backgroundColor: theme.bg },
   scrollContent: { padding: 15, paddingBottom: 40 },
   
-  summaryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 15, marginBottom: 25 },
-  summaryCard: { backgroundColor: '#fff', borderRadius: 16, padding: 15, width: '47%', borderWidth: 1, borderColor: '#e2e8f0', elevation: 2, shadowColor: '#000', shadowOpacity: 0.05, shadowOffset: { width: 0, height: 4 } },
-  summaryHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 15 },
-  summaryTitle: { fontSize: 12, color: '#64748b', fontWeight: '700', textTransform: 'uppercase' },
-  iconWrapper: { padding: 8, borderRadius: 10 },
-  summaryValue: { fontSize: 28, fontWeight: '900', lineHeight: 32 },
+  healthBanner: {
+    backgroundColor: theme.card, borderRadius: 16, padding: 15,
+    borderWidth: 1, borderColor: theme.border, borderTopWidth: 4,
+    marginBottom: 20, shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 10, elevation: 5
+  },
+  healthHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
+  healthTitleRow: { flexDirection: 'row', alignItems: 'center' },
+  healthTitle: { color: theme.textMain, fontSize: 16, fontWeight: '800' },
+  healthSubtitle: { color: theme.textMuted, fontSize: 12, marginTop: 2 },
+  healthScore: { fontSize: 28, fontWeight: '900', fontFamily: 'monospace' },
+  progressBarBg: { height: 6, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 3, marginBottom: 10, overflow: 'hidden' },
+  progressBarFill: { height: '100%', borderRadius: 3 },
+  healthFooter: { flexDirection: 'row', justifyContent: 'space-between' },
+  healthFooterText: { color: theme.textMuted, fontSize: 10, fontWeight: 'bold', letterSpacing: 0.5 },
 
-  flexHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
-  sectionTitle: { fontSize: 18, fontWeight: '900', color: '#0f172a' },
+  kpiGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 20 },
+  kpiCard: {
+    width: (width - 40) / 2, backgroundColor: theme.card, borderRadius: 16, padding: 15,
+    borderWidth: 1, borderColor: theme.border, marginBottom: 10
+  },
+  kpiHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 },
+  kpiTitle: { color: theme.textMuted, fontSize: 12, fontWeight: '700', flex: 1 },
+  kpiIconBg: { padding: 6, borderRadius: 8 },
+  kpiValue: { color: theme.textMain, fontSize: 24, fontWeight: '900' },
 
-  dashboardEmpty: { padding: 40, alignItems: 'center', backgroundColor: 'rgba(16, 185, 129, 0.05)', borderWidth: 1, borderStyle: 'dashed', borderColor: 'rgba(16, 185, 129, 0.3)', borderRadius: 16 },
-  emptyTitle: { fontSize: 20, fontWeight: '900', color: '#0f172a', marginTop: 15 },
-  emptySubtitle: { color: '#64748b', textAlign: 'center', marginTop: 5, fontWeight: '500' },
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
+  sectionTitle: { color: theme.textMain, fontSize: 18, fontWeight: '800' },
+  btnResolveAll: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.05)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: theme.border },
+  btnResolveAllText: { color: theme.textMuted, fontSize: 12, fontWeight: 'bold', marginLeft: 6 },
 
-  cardAlert: { backgroundColor: '#fff', borderRadius: 16, padding: 20, marginBottom: 15, borderBottomWidth: 4, elevation: 3, shadowColor: '#000', shadowOpacity: 0.06, shadowOffset: { width: 0, height: 4 } },
-  cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
-  alertTitleGroup: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  alertIconBox: { padding: 8, borderRadius: 10 },
-  alertEquipName: { fontWeight: '900', fontSize: 16, color: '#0f172a' },
-  timeBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
-  timeBadgeText: { fontSize: 11, fontWeight: '800', color: '#0f172a' },
-  
-  badgesContainer: { flexDirection: 'row', gap: 8, marginBottom: 12 },
-  badgeSetor: { backgroundColor: '#f8fafc', color: '#64748b', borderWidth: 1, borderColor: '#e2e8f0', fontSize: 10, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, fontWeight: '800', textTransform: 'uppercase' },
-  alertMsg: { fontSize: 14, color: '#0f172a', fontWeight: '500', marginBottom: 20, lineHeight: 20 },
-  
-  alertActions: { flexDirection: 'row', gap: 10 },
-  btnAlertAction: { flex: 1, padding: 12, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
-  btnAlertActionText: { color: '#fff', fontWeight: '800', fontSize: 13 },
-  btnChatInternal: { backgroundColor: '#38bdf8', width: 44, height: 44, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  alertCard: { backgroundColor: theme.card, borderRadius: 16, padding: 15, borderWidth: 1, borderColor: theme.border, borderLeftWidth: 4, borderLeftColor: theme.danger, marginBottom: 15 },
+  alertTop: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+  alertIconBox: { width: 36, height: 36, borderRadius: 10, backgroundColor: 'rgba(239, 68, 68, 0.1)', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+  alertEquip: { color: theme.textMain, fontSize: 16, fontWeight: '800' },
+  alertFilial: { color: theme.textMuted, fontSize: 12, fontWeight: '600' },
+  alertMsg: { color: theme.textMain, fontSize: 14, marginBottom: 15, lineHeight: 20 },
+  alertFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.05)', paddingTop: 10 },
+  timeRow: { flexDirection: 'row', alignItems: 'center' },
+  timeText: { color: theme.textMuted, fontSize: 12, marginLeft: 6, fontWeight: '600' },
+  btnActionAlert: { backgroundColor: 'rgba(239, 68, 68, 0.1)', paddingHorizontal: 15, paddingVertical: 8, borderRadius: 8 },
+  btnActionText: { color: theme.danger, fontWeight: 'bold', fontSize: 12 },
 
-  // Chat Modal Styles
-  chatOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  chatPanel: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '90%' },
-  chatPanelHeader: { backgroundColor: '#ef4444', padding: 20, borderTopLeftRadius: 20, borderTopRightRadius: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  chatPanelTitle: { color: '#fff', fontSize: 18, fontWeight: '900' },
-  chatPanelSubtitle: { color: 'rgba(255,255,255,0.8)', fontSize: 13, fontWeight: '600', marginTop: 2 },
-  btnCloseChat: { padding: 4 },
-  chatPanelBody: { padding: 20 },
-  chatLabel: { fontSize: 14, fontWeight: '800', color: '#0f172a', marginBottom: 10, marginTop: 10 },
-  contactScroll: { maxHeight: 50, marginBottom: 20 },
-  contatoSelectBtn: { backgroundColor: '#f1f5f9', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20, marginRight: 10, borderWidth: 1, borderColor: '#e2e8f0', alignSelf: 'flex-start' },
-  contatoSelected: { backgroundColor: '#059669', borderColor: '#059669' },
-  contatoSelectText: { color: '#334155', fontWeight: '700', fontSize: 13 },
-  chatTextarea: { backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 12, padding: 15, minHeight: 120, textAlignVertical: 'top', fontSize: 14, color: '#0f172a', marginBottom: 20 },
-  btnConfirmChat: { backgroundColor: '#059669', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 15, borderRadius: 12 },
-  btnConfirmChatText: { color: '#fff', fontWeight: '800', fontSize: 15 }
+  emptyState: { alignItems: 'center', justifyContent: 'center', paddingVertical: 40, backgroundColor: theme.card, borderRadius: 16, borderWidth: 1, borderColor: theme.border },
+  emptyTitle: { color: theme.textMain, fontSize: 18, fontWeight: '800', marginBottom: 8 },
+  emptySub: { color: theme.textMuted, textAlign: 'center', paddingHorizontal: 20, fontSize: 13, lineHeight: 20 }
 });

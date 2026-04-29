@@ -3,8 +3,8 @@ import axios from 'axios';
 import io from 'socket.io-client';
 
 // 🔴 O IP do teu computador
-const SOCKET_URL = 'http://192.168.200.27:3000'; 
-const API_URL = 'http://192.168.200.27:3000/api'; // Repara que tem /api no final!
+const SOCKET_URL = 'http://192.168.56.1:3000'; 
+const API_URL = 'http://192.168.56.1:3000/api'; // Repara que tem /api no final!
 
 export const api = axios.create({
   baseURL: API_URL,

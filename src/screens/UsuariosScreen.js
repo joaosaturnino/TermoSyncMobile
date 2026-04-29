@@ -1,316 +1,160 @@
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { useContext, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Modal, Platform, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { AppContext } from '../context/AppContext';
+import {
+  Globe,
+  KeyRound,
+  Lock,
+  MapPin,
+  Search,
+  Settings,
+  ShieldAlert,
+  Store,
+  UserCircle,
+  Wrench
+} from 'lucide-react-native';
+import { useMemo, useState } from 'react';
+import {
+  SafeAreaView,
+  ScrollView, StyleSheet,
+  Text, TextInput,
+  TouchableOpacity,
+  View
+} from 'react-native';
 
-export default function UsuariosScreen({ navigation }) {
-  const { api, filiaisDb, isOffline } = useContext(AppContext);
-  
-  // Usamos um array vazio caso o context ainda não tenha os utilizadores carregados
-  const usuariosLista = []; // Substituir por `usuariosLista` do Contexto se já o tiveres no AppContext
-  const carregarUsuarios = () => {}; // Função do context
+const theme = {
+  bg: '#020617', card: '#0f172a', textMain: '#f8fafc', textMuted: '#94a3b8',
+  border: '#1e293b', primary: '#059669', secondary: '#10b981', danger: '#ef4444',
+  info: '#38bdf8'
+};
 
-  const formInicialUsuario = { id: '', usuario: '', senha: '', role: 'LOJA', filial: '', tipo_acesso: 'GERENTE', nome_identidade: '' };
-  const [formUsuario, setFormUsuario] = useState({ ...formInicialUsuario });
-  const [modalUsuario, setModalUsuario] = useState(false);
+export default function UsuariosScreen() {
+  const [busca, setBusca] = useState('');
+  const [filtroPrivilegio, setFiltroPrivilegio] = useState('TODOS');
 
-  const abrirModalUsuario = (tipoAcesso) => {
-    let roleTarget = 'LOJA'; 
-    if (tipoAcesso === 'TECNICO') roleTarget = 'MANUTENCAO'; 
-    if (tipoAcesso === 'OUTROS') roleTarget = 'ADMIN';
-    
-    setFormUsuario({ id: '', usuario: '', senha: '', role: roleTarget, filial: '', tipo_acesso: tipoAcesso, nome_identidade: '' }); 
-    setModalUsuario(true);
-  };
+  // Simulação de Identidades
+  const usuariosDb = [
+    { id: 1, nome: 'Eng. Sistema', usuario: 'admin.root', role: 'ADMIN', cargo: 'Master' },
+    { id: 2, nome: 'Carlos Silva', usuario: 'carlos.tec', role: 'MANUTENCAO', cargo: 'Técnico L2' },
+    { id: 3, nome: 'Maria João', usuario: 'maria.j', role: 'LOJA', cargo: 'Gerente', filial: 'Loja Centro' },
+  ];
 
-  const salvarUsuario = async () => {
-    if (isOffline) return alert('Ação bloqueada offline.');
-    if (!formUsuario.usuario) return alert('O Login é obrigatório!');
-    if (!formUsuario.id && !formUsuario.senha) return alert('A senha é obrigatória para novos utilizadores!');
-
-    try {
-      const payload = { 
-        usuario: formUsuario.usuario, 
-        senha: formUsuario.senha, 
-        role: formUsuario.role, 
-        filial: formUsuario.role !== 'LOJA' ? 'Todas' : formUsuario.filial, 
-        nome_gerente: formUsuario.tipo_acesso === 'GERENTE' ? formUsuario.nome_identidade : null,
-        nome_coordenador: formUsuario.tipo_acesso === 'COORDENADOR' ? formUsuario.nome_identidade : null,
-        nome_tecnico: formUsuario.role === 'MANUTENCAO' ? formUsuario.nome_identidade : null
-      };
-
-      if (formUsuario.id) {
-        if (!payload.senha) delete payload.senha; 
-        await api.put(`/usuarios/${formUsuario.id}`, payload);
-        alert('Credenciais atualizadas!');
-      } else {
-        await api.post('/usuarios', payload);
-        alert('Novo utilizador autorizado!');
-      }
-      setModalUsuario(false);
-      carregarUsuarios();
-    } catch (err) {
-      alert('Erro. Verifique se o login já existe.');
-    }
-  };
-
-  const pedirExclusaoUsuario = (id, nome) => {
-    Alert.alert(
-      "Revogar Acesso",
-      `Tem a certeza que deseja remover o utilizador "${nome}" permanentemente?`,
-      [
-        { text: "Cancelar", style: "cancel" },
-        { text: "Remover", style: "destructive", onPress: async () => {
-            try { 
-              await api.delete(`/usuarios/${id}`); 
-              alert('Acesso revogado.'); 
-              carregarUsuarios(); 
-            } catch (e) { alert('Erro ao remover o utilizador.'); }
-          }
-        }
-      ]
-    );
-  };
-
-  const modalHeaderInfo = (() => {
-    if (formUsuario.role === 'ADMIN') return { title: 'Administrador Root', icon: 'shield-account', color: '#8b5cf6' };
-    if (formUsuario.role === 'MANUTENCAO') return { title: 'Técnico de Manutenção', icon: 'wrench', color: '#3b82f6' };
-    return { title: 'Gestão de Loja', icon: 'storefront', color: '#10b981' };
-  })();
+  const kpis = useMemo(() => {
+    let admin = 0; let tech = 0; let loja = 0;
+    usuariosDb.forEach(u => {
+      if (u.role === 'ADMIN') admin++;
+      else if (u.role === 'MANUTENCAO') tech++;
+      else if (u.role === 'LOJA') loja++;
+    });
+    return { total: usuariosDb.length, admin, tech, loja };
+  }, [usuariosDb]);
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.openDrawer()} style={{ padding: 5 }}>
-          <Ionicons name="menu" size={28} color="#059669" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Controlo de Acessos</Text>
-        <View style={{ width: 28 }} />
-      </View>
-
-      <ScrollView contentContainerStyle={styles.listContainer}>
+      <ScrollView contentContainerStyle={styles.scrollContent}>
         
-        {/* Carrossel de Ações de Criação */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.actionCarousel}>
-          <TouchableOpacity style={[styles.actionCard, { borderLeftColor: '#10b981' }]} onPress={() => abrirModalUsuario('GERENTE')}>
-            <View style={[styles.actionIconBox, { backgroundColor: 'rgba(16, 185, 129, 0.15)' }]}>
-              <MaterialCommunityIcons name="store" size={24} color="#10b981" />
-            </View>
-            <View>
-              <Text style={styles.actionTitle}>Gerência de Loja</Text>
-              <Text style={styles.actionSub}>Atribuir a uma filial</Text>
-            </View>
-          </TouchableOpacity>
+        <View style={styles.headerBox}>
+          <View style={styles.iconCircle}><KeyRound size={24} color={theme.info} /></View>
+          <View style={{ flex: 1, marginLeft: 12 }}>
+            <Text style={styles.title}>IAM (Acessos)</Text>
+            <Text style={styles.subtitle}>Gestão de Identidade e Privilégios</Text>
+          </View>
+        </View>
 
-          <TouchableOpacity style={[styles.actionCard, { borderLeftColor: '#3b82f6' }]} onPress={() => abrirModalUsuario('TECNICO')}>
-            <View style={[styles.actionIconBox, { backgroundColor: 'rgba(59, 130, 246, 0.15)' }]}>
-              <MaterialCommunityIcons name="wrench" size={24} color="#3b82f6" />
-            </View>
-            <View>
-              <Text style={styles.actionTitle}>Equipa Técnica</Text>
-              <Text style={styles.actionSub}>Manutenção Global</Text>
-            </View>
-          </TouchableOpacity>
+        {/* SEARCH & KPIS */}
+        <View style={styles.searchBox}>
+          <Search size={18} color={theme.textMuted} />
+          <TextInput style={styles.searchInput} placeholder="Procurar agente ou login..." placeholderTextColor={theme.textMuted} value={busca} onChangeText={setBusca} />
+        </View>
 
-          <TouchableOpacity style={[styles.actionCard, { borderLeftColor: '#8b5cf6' }]} onPress={() => abrirModalUsuario('OUTROS')}>
-            <View style={[styles.actionIconBox, { backgroundColor: 'rgba(139, 92, 246, 0.15)' }]}>
-              <MaterialCommunityIcons name="shield-alert" size={24} color="#8b5cf6" />
-            </View>
-            <View>
-              <Text style={styles.actionTitle}>Root / Admin</Text>
-              <Text style={styles.actionSub}>Acesso total ao sistema</Text>
-            </View>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.kpiScroll}>
+          <TouchableOpacity style={[styles.kpiPill, filtroPrivilegio==='TODOS' && styles.kpiPillActive]} onPress={()=>setFiltroPrivilegio('TODOS')}>
+            <Text style={[styles.kpiVal, filtroPrivilegio==='TODOS'&&styles.kpiValActive]}>{kpis.total}</Text><Text style={[styles.kpiLbl, filtroPrivilegio==='TODOS'&&styles.kpiValActive]}>Rede</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.kpiPill, {borderColor: theme.danger}, filtroPrivilegio==='ADMIN' && {backgroundColor: theme.danger}]} onPress={()=>setFiltroPrivilegio('ADMIN')}>
+            <Text style={[styles.kpiVal, {color: theme.danger}, filtroPrivilegio==='ADMIN'&&{color:'white'}]}>{kpis.admin}</Text><Text style={[styles.kpiLbl, {color: theme.danger}, filtroPrivilegio==='ADMIN'&&{color:'white'}]}>L3 (Master)</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.kpiPill, {borderColor: theme.info}, filtroPrivilegio==='MANUTENCAO' && {backgroundColor: theme.info}]} onPress={()=>setFiltroPrivilegio('MANUTENCAO')}>
+            <Text style={[styles.kpiVal, {color: theme.info}, filtroPrivilegio==='MANUTENCAO'&&{color:'white'}]}>{kpis.tech}</Text><Text style={[styles.kpiLbl, {color: theme.info}, filtroPrivilegio==='MANUTENCAO'&&{color:'white'}]}>L2 (Técnico)</Text>
           </TouchableOpacity>
         </ScrollView>
 
-        {/* Lista de Utilizadores */}
-        {usuariosLista.length === 0 ? (
-          <View style={styles.emptyState}>
-            <MaterialCommunityIcons name="account-group" size={64} color="#059669" style={{ opacity: 0.5 }} />
-            <Text style={styles.emptyTitle}>Gestão de Acessos</Text>
-            <Text style={styles.emptySub}>A carregar utilizadores do sistema...</Text>
-          </View>
-        ) : (
-          usuariosLista.map(u => {
-            const identidade = u.nome_gerente || u.nome_coordenador || u.nome_tecnico || 'Equipe / Indefinido';
-            const inicial = identidade !== 'Equipe / Indefinido' ? identidade.charAt(0).toUpperCase() : u.usuario.charAt(0).toUpperCase();
-            
-            let roleBadge = { text: 'Operação Loja', color: '#10b981', bg: 'rgba(16, 185, 129, 0.1)' };
-            if (u.role === 'ADMIN') roleBadge = { text: 'Admin / Root', color: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.1)' };
-            else if (u.role === 'MANUTENCAO') roleBadge = { text: 'Manutenção', color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.1)' };
+        {/* CARTÕES DE IDENTIDADE */}
+        {usuariosDb.map(u => {
+          if (filtroPrivilegio !== 'TODOS' && u.role !== filtroPrivilegio) return null;
 
-            return (
-              <View key={u.id} style={styles.userCard}>
-                <View style={styles.userHeader}>
-                  <View style={styles.userProfileBox}>
-                    <View style={[styles.userAvatar, { backgroundColor: roleBadge.color }]}>
-                      <Text style={styles.userAvatarText}>{inicial}</Text>
-                    </View>
-                    <View style={styles.userDetails}>
-                      <Text style={styles.userIdentity}>{identidade}</Text>
-                      <Text style={styles.userLogin}>@{u.usuario}</Text>
-                    </View>
-                  </View>
-                  <View style={styles.userActions}>
-                    <TouchableOpacity style={styles.btnEdit} onPress={() => {
-                        let tipoAcesso = 'GERENTE'; if(u.role === 'ADMIN') tipoAcesso = 'OUTROS'; if(u.role === 'MANUTENCAO') tipoAcesso = 'TECNICO';
-                        setFormUsuario({ id: u.id, usuario: u.usuario, senha: '', role: u.role, filial: u.filial || '', tipo_acesso: tipoAcesso, nome_identidade: identidade === 'Equipe / Indefinido' ? '' : identidade });
-                        setModalUsuario(true);
-                      }}>
-                      <MaterialCommunityIcons name="pencil" size={18} color="#3b82f6" />
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.btnDelete} onPress={() => pedirExclusaoUsuario(u.id, u.usuario)}>
-                      <MaterialCommunityIcons name="close" size={18} color="#ef4444" />
-                    </TouchableOpacity>
+          let roleColor = theme.success; let IconLevel = Store; let roleLabel = 'L1 (Loja)';
+          if (u.role === 'ADMIN') { roleColor = theme.danger; IconLevel = ShieldAlert; roleLabel = 'L3 (Admin)'; }
+          else if (u.role === 'MANUTENCAO') { roleColor = theme.info; IconLevel = Wrench; roleLabel = 'L2 (Técnico)'; }
+
+          return (
+            <View key={u.id} style={[styles.userCard, { borderLeftColor: roleColor }]}>
+              <View style={styles.userHeader}>
+                <View style={styles.avatarRow}>
+                  <View style={[styles.avatar, { backgroundColor: roleColor }]}><Text style={styles.avatarText}>{u.nome.charAt(0)}</Text></View>
+                  <View style={{ marginLeft: 10 }}>
+                    <Text style={styles.userName}>{u.nome}</Text>
+                    <Text style={styles.userCargo}>{u.cargo}</Text>
                   </View>
                 </View>
-
-                <View style={styles.userMeta}>
-                  <View style={[styles.roleBadge, { backgroundColor: roleBadge.bg, borderColor: roleBadge.color }]}>
-                    <Text style={[styles.roleBadgeText, { color: roleBadge.color }]}>{roleBadge.text}</Text>
-                  </View>
-                  
-                  {u.role === 'LOJA' ? (
-                    <View style={styles.filialInfo}>
-                      <MaterialCommunityIcons name="map-marker-outline" size={14} color="#64748b" />
-                      <Text style={styles.filialText}>{u.filial || 'Sem Filial'}</Text>
-                    </View>
-                  ) : (
-                    <View style={styles.filialInfo}>
-                      <MaterialCommunityIcons name="web" size={14} color="#64748b" />
-                      <Text style={styles.filialText}>Rede Global</Text>
-                    </View>
-                  )}
+                <View style={styles.actionsRow}>
+                  <TouchableOpacity style={styles.actionBtn}><Settings size={16} color={theme.textMuted} /></TouchableOpacity>
+                  <TouchableOpacity style={styles.actionBtn}><Lock size={16} color={theme.danger} /></TouchableOpacity>
                 </View>
               </View>
-            );
-          })
-        )}
-      </ScrollView>
 
-      {/* MODAL DE CRIAÇÃO/EDIÇÃO */}
-      <Modal visible={modalUsuario} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalContent}>
-            <View style={styles.modalHeaderLine}>
-              <MaterialCommunityIcons name={modalHeaderInfo.icon} size={24} color={modalHeaderInfo.color} style={{ marginRight: 10 }}/>
-              <Text style={styles.modalTitle}>{formUsuario.id ? 'Atualizar Acesso' : 'Nova Autorização'}</Text>
-            </View>
-
-            <Text style={styles.modalSubtitle}>{modalHeaderInfo.title}</Text>
-
-            <ScrollView style={{ maxHeight: 400 }} showsVerticalScrollIndicator={false}>
-              
-              <Text style={styles.inputLabel}>Nome do Colaborador (Opcional)</Text>
-              <TextInput style={styles.input} placeholder="Ex: João Silva" value={formUsuario.nome_identidade} onChangeText={t => setFormUsuario({...formUsuario, nome_identidade: t})} />
-
-              {formUsuario.role === 'LOJA' && (
-                <>
-                  <Text style={styles.inputLabel}>Atribuição da Filial Física</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filiaisScroll}>
-                    {(filiaisDb || []).map(f => (
-                      <TouchableOpacity key={f} style={[styles.filialChip, formUsuario.filial === f && styles.filialChipActive]} onPress={() => setFormUsuario({...formUsuario, filial: f})}>
-                        <Text style={[styles.filialChipText, formUsuario.filial === f && styles.filialChipTextActive]}>{f}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-
-                  <Text style={styles.inputLabel}>Nível de Gestão</Text>
-                  <View style={styles.radioGroup}>
-                    <TouchableOpacity style={[styles.radioBtn, formUsuario.tipo_acesso === 'GERENTE' && styles.radioActive]} onPress={() => setFormUsuario({...formUsuario, tipo_acesso: 'GERENTE'})}>
-                      <Text style={[styles.radioText, formUsuario.tipo_acesso === 'GERENTE' && styles.radioTextActive]}>Gerente</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={[styles.radioBtn, formUsuario.tipo_acesso === 'COORDENADOR' && styles.radioActive]} onPress={() => setFormUsuario({...formUsuario, tipo_acesso: 'COORDENADOR'})}>
-                      <Text style={[styles.radioText, formUsuario.tipo_acesso === 'COORDENADOR' && styles.radioTextActive]}>Coordenador</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={[styles.radioBtn, formUsuario.tipo_acesso === 'OUTROS' && styles.radioActive]} onPress={() => setFormUsuario({...formUsuario, tipo_acesso: 'OUTROS'})}>
-                      <Text style={[styles.radioText, formUsuario.tipo_acesso === 'OUTROS' && styles.radioTextActive]}>Operador Base</Text>
-                    </TouchableOpacity>
+              <View style={styles.userBody}>
+                <View style={styles.badgeRow}>
+                  <View style={styles.badgeLogin}><UserCircle size={12} color={theme.textMuted}/><Text style={styles.badgeLoginText}>@{u.usuario}</Text></View>
+                  <View style={[styles.badgeRole, { backgroundColor: `${roleColor}15`, borderColor: `${roleColor}40` }]}>
+                    <IconLevel size={10} color={roleColor}/><Text style={[styles.badgeRoleText, { color: roleColor }]}>{roleLabel}</Text>
                   </View>
-                </>
-              )}
-
-              <Text style={styles.inputLabel}>Nome de Utilizador (Login)</Text>
-              <TextInput style={styles.input} placeholder="Ex: joao.silva" autoCapitalize="none" value={formUsuario.usuario} onChangeText={t => setFormUsuario({...formUsuario, usuario: t})} />
-
-              <Text style={styles.inputLabel}>Senha de Segurança {formUsuario.id ? '(Deixe vazio para manter)' : ''}</Text>
-              <TextInput style={styles.input} placeholder="********" secureTextEntry value={formUsuario.senha} onChangeText={t => setFormUsuario({...formUsuario, senha: t})} />
-
-            </ScrollView>
-
-            <View style={styles.modalActions}>
-              <TouchableOpacity style={styles.btnCancel} onPress={() => setModalUsuario(false)}><Text style={styles.btnCancelText}>Cancelar</Text></TouchableOpacity>
-              <TouchableOpacity style={[styles.btnConfirm, { backgroundColor: modalHeaderInfo.color }]} onPress={salvarUsuario}>
-                <MaterialCommunityIcons name="content-save" size={18} color="#fff" style={{marginRight: 6}}/>
-                <Text style={styles.btnConfirmText}>Salvar Credencial</Text>
-              </TouchableOpacity>
+                </View>
+                <View style={styles.locationRow}>
+                  {u.role === 'LOJA' ? <><MapPin size={12} color={theme.textMuted}/><Text style={styles.locText}>{u.filial}</Text></> : <><Globe size={12} color={theme.success}/><Text style={[styles.locText, {color: theme.success}]}>Acesso Global Autorizado</Text></>}
+                </View>
+              </View>
             </View>
-          </KeyboardAvoidingView>
-        </View>
-      </Modal>
+          );
+        })}
+
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f8fafc' },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 15, backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#e2e8f0', paddingTop: Platform.OS === 'ios' ? 50 : 15 },
-  headerTitle: { fontSize: 18, fontWeight: '900', color: '#0f172a' },
-  listContainer: { paddingBottom: 40 },
+  container: { flex: 1, backgroundColor: theme.bg },
+  scrollContent: { padding: 15, paddingBottom: 40 },
+  headerBox: { flexDirection: 'row', alignItems: 'center', marginBottom: 20, backgroundColor: theme.card, padding: 15, borderRadius: 16, borderWidth: 1, borderColor: theme.border },
+  iconCircle: { padding: 10, backgroundColor: 'rgba(56, 189, 248, 0.15)', borderRadius: 12, borderWidth: 1, borderColor: 'rgba(56, 189, 248, 0.3)' },
+  title: { color: theme.textMain, fontSize: 18, fontWeight: '900' },
+  subtitle: { color: theme.textMuted, fontSize: 12, fontWeight: '600' },
+
+  searchBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 12, paddingHorizontal: 15, paddingVertical: 10, marginBottom: 15 },
+  searchInput: { flex: 1, color: theme.textMain, marginLeft: 10, fontSize: 15 },
+
+  kpiScroll: { marginBottom: 20 },
+  kpiPill: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: theme.border, marginRight: 10 },
+  kpiPillActive: { backgroundColor: theme.textMain, borderColor: theme.textMain },
+  kpiVal: { fontSize: 14, fontWeight: '900', color: theme.textMain },
+  kpiLbl: { fontSize: 10, fontWeight: '700', color: theme.textMuted, textTransform: 'uppercase' },
+  kpiValActive: { color: theme.bg },
+
+  userCard: { backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderLeftWidth: 4, borderRadius: 12, padding: 15, marginBottom: 15 },
+  userHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 15 },
+  avatarRow: { flexDirection: 'row', alignItems: 'center' },
+  avatar: { width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+  avatarText: { color: 'white', fontSize: 16, fontWeight: '900' },
+  userName: { color: theme.textMain, fontSize: 15, fontWeight: '800' },
+  userCargo: { color: theme.textMuted, fontSize: 11, fontWeight: '600', textTransform: 'uppercase' },
+  actionsRow: { flexDirection: 'row', gap: 8 },
+  actionBtn: { padding: 6, backgroundColor: theme.bg, borderRadius: 8, borderWidth: 1, borderColor: theme.border },
+
+  userBody: { gap: 10 },
+  badgeRow: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
+  badgeLogin: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: theme.bg, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1, borderColor: theme.border },
+  badgeLoginText: { color: theme.textMain, fontFamily: 'monospace', fontSize: 11, fontWeight: '700' },
+  badgeRole: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1 },
+  badgeRoleText: { fontSize: 10, fontWeight: '800', textTransform: 'uppercase' },
   
-  actionCarousel: { padding: 15, gap: 15, paddingRight: 30 },
-  actionCard: { backgroundColor: '#fff', padding: 15, borderRadius: 16, borderLeftWidth: 4, minWidth: 200, flexDirection: 'row', alignItems: 'center', gap: 12, elevation: 3, shadowColor: '#000', shadowOffset: {width: 0, height: 2}, shadowOpacity: 0.05 },
-  actionIconBox: { padding: 10, borderRadius: 12 },
-  actionTitle: { fontSize: 15, fontWeight: '900', color: '#0f172a' },
-  actionSub: { fontSize: 11, color: '#64748b', fontWeight: '600' },
-
-  emptyState: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60 },
-  emptyTitle: { fontSize: 18, fontWeight: '900', color: '#0f172a', marginTop: 15 },
-  emptySub: { fontSize: 14, color: '#64748b', textAlign: 'center', marginTop: 5, fontWeight: '500' },
-
-  userCard: { backgroundColor: '#fff', marginHorizontal: 15, marginBottom: 15, borderRadius: 16, padding: 15, elevation: 2, shadowColor: '#000', shadowOffset: {width: 0, height: 2}, shadowOpacity: 0.05, borderWidth: 1, borderColor: '#f1f5f9' },
-  userHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 15, borderBottomWidth: 1, borderColor: '#f1f5f9', paddingBottom: 15 },
-  userProfileBox: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
-  userAvatar: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', elevation: 2 },
-  userAvatarText: { color: '#fff', fontSize: 18, fontWeight: '900' },
-  userDetails: { flex: 1 },
-  userIdentity: { fontSize: 16, fontWeight: '900', color: '#0f172a' },
-  userLogin: { fontSize: 12, color: '#64748b', fontWeight: '700' },
-  
-  userActions: { flexDirection: 'row', gap: 8 },
-  btnEdit: { backgroundColor: 'rgba(59, 130, 246, 0.08)', padding: 8, borderRadius: 8 },
-  btnDelete: { backgroundColor: 'rgba(239, 68, 68, 0.08)', padding: 8, borderRadius: 8 },
-
-  userMeta: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  roleBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, borderWidth: 1 },
-  roleBadgeText: { fontSize: 11, fontWeight: '800', textTransform: 'uppercase' },
-  filialInfo: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  filialText: { fontSize: 12, color: '#64748b', fontWeight: '700' },
-
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  modalContent: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 25, paddingBottom: Platform.OS === 'ios' ? 40 : 25 },
-  modalHeaderLine: { flexDirection: 'row', alignItems: 'center', marginBottom: 5 },
-  modalTitle: { fontSize: 20, fontWeight: '900', color: '#0f172a' },
-  modalSubtitle: { fontSize: 13, color: '#64748b', fontWeight: '600', marginBottom: 20, textTransform: 'uppercase' },
-  
-  inputLabel: { fontSize: 12, fontWeight: '800', color: '#64748b', marginBottom: 6, marginTop: 10, textTransform: 'uppercase' },
-  input: { backgroundColor: '#f1f5f9', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 12, padding: 15, color: '#0f172a', fontWeight: '600', marginBottom: 5 },
-  
-  filiaisScroll: { flexDirection: 'row', marginBottom: 5 },
-  filialChip: { backgroundColor: '#f1f5f9', borderWidth: 1, borderColor: '#e2e8f0', paddingHorizontal: 15, paddingVertical: 8, borderRadius: 20, marginRight: 10 },
-  filialChipActive: { backgroundColor: '#059669', borderColor: '#059669' },
-  filialChipText: { color: '#64748b', fontWeight: '700', fontSize: 13 },
-  filialChipTextActive: { color: '#fff' },
-
-  radioGroup: { flexDirection: 'row', gap: 10, marginBottom: 5, flexWrap: 'wrap' },
-  radioBtn: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: '#e2e8f0', backgroundColor: '#f8fafc' },
-  radioActive: { borderColor: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.1)' },
-  radioText: { fontSize: 13, color: '#64748b', fontWeight: '700' },
-  radioTextActive: { color: '#10b981' },
-
-  modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 20 },
-  btnCancel: { padding: 14, borderRadius: 12 },
-  btnCancelText: { color: '#64748b', fontWeight: '800' },
-  btnConfirm: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 24, paddingVertical: 14, borderRadius: 12, elevation: 2 },
-  btnConfirmText: { color: '#fff', fontWeight: '900' }
+  locationRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 },
+  locText: { color: theme.textMuted, fontSize: 11, fontWeight: '700' }
 });

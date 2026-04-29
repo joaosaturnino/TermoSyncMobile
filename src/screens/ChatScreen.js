@@ -1,265 +1,123 @@
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { Audio } from 'expo-av';
-import * as ImagePicker from 'expo-image-picker';
-import { useContext, useEffect, useRef, useState } from 'react';
-import { Animated, FlatList, Image, KeyboardAvoidingView, Platform, SafeAreaView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { AppContext } from '../context/AppContext';
+import {
+  ArrowLeft, Mic, Paperclip,
+  Radio,
+  Send, Shield,
+  Terminal
+} from 'lucide-react-native';
+import { useState } from 'react';
+import {
+  KeyboardAvoidingView, Platform,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text, TextInput, TouchableOpacity,
+  View
+} from 'react-native';
+
+const theme = {
+  bg: '#020617', card: '#0f172a', textMain: '#f8fafc', textMuted: '#94a3b8',
+  border: '#1e293b', primary: '#059669', secondary: '#10b981', danger: '#ef4444'
+};
 
 export default function ChatScreen({ navigation }) {
-  const { socket, userId, nomeLogado, contatosDb, historicoChat, setHistoricoChat, setNaoLidasPorContato, naoLidasPorContato, chamadaAtiva, setChamadaAtiva } = useContext(AppContext);
-  
-  const [contatoAtivo, setContatoAtivo] = useState(null);
   const [mensagem, setMensagem] = useState('');
   
-  const [recording, setRecording] = useState(null);
-  const [isRecording, setIsRecording] = useState(false);
-  const [somAtual, setSomAtual] = useState(null);
-
-  const flatListRef = useRef(null);
-  const callPulseAnim = useRef(new Animated.Value(1)).current;
-
-  // Animação da Chamada
-  useEffect(() => {
-    if (chamadaAtiva) {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(callPulseAnim, { toValue: 1.3, duration: 1000, useNativeDriver: true }),
-          Animated.timing(callPulseAnim, { toValue: 1, duration: 1000, useNativeDriver: true })
-        ])
-      ).start();
-    }
-  }, [chamadaAtiva]);
-
-  useEffect(() => {
-    if (contatoAtivo) {
-      setNaoLidasPorContato(prev => {
-        if (prev && prev[contatoAtivo.id]) {
-          const n = { ...prev }; delete n[contatoAtivo.id]; return n; 
-        }
-        return prev;
-      });
-    }
-  }, [contatoAtivo, historicoChat, setNaoLidasPorContato]);
-
-  const enviarMensagemTexto = () => {
-    if (!mensagem.trim()) return;
-    const novaMsg = { id: Date.now(), remetenteId: userId, remetenteNome: nomeLogado, destinoId: contatoAtivo.id, texto: mensagem, data: new Date(), tipo: 'sent' };
-    
-    setHistoricoChat(prev => [...(prev || []), novaMsg]);
-    socket?.emit('enviar_mensagem_chat', novaMsg);
-    setMensagem('');
-  };
-
-  const anexarImagem = async () => {
-    try {
-      let result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, quality: 0.5, base64: true });
-      if (!result.canceled && result.assets && result.assets[0].base64) {
-        const base64 = `data:image/jpeg;base64,${result.assets[0].base64}`;
-        const novaMsg = { id: Date.now(), remetenteId: userId, remetenteNome: nomeLogado, destinoId: contatoAtivo.id, texto: `[FILE:imagem.jpg|image/jpeg]${base64}`, data: new Date(), tipo: 'sent' };
-        setHistoricoChat(prev => [...(prev || []), novaMsg]);
-        socket?.emit('enviar_mensagem_chat', novaMsg);
-      }
-    } catch (e) {}
-  };
-
-  const iniciarGravacao = async () => {
-    try {
-      await Audio.requestPermissionsAsync();
-      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
-      const { recording } = await Audio.Recording.createAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
-      setRecording(recording);
-      setIsRecording(true);
-    } catch (err) {}
-  };
-
-  const pararEEnviarGravacao = async () => {
-    setIsRecording(false);
-    if (!recording) return;
-    try {
-      await recording.stopAndUnloadAsync();
-      const uri = recording.getURI();
-      setRecording(null);
-      const novaMsg = { id: Date.now(), remetenteId: userId, remetenteNome: nomeLogado, destinoId: contatoAtivo.id, texto: `[AUDIO]${uri}`, data: new Date(), tipo: 'sent' };
-      setHistoricoChat(prev => [...(prev || []), novaMsg]);
-      socket?.emit('enviar_mensagem_chat', novaMsg);
-    } catch (e) {}
-  };
-
-  const tocarAudio = async (uri) => {
-    try {
-      if (somAtual) await somAtual.unloadAsync();
-      const { sound } = await Audio.Sound.createAsync({ uri });
-      setSomAtual(sound);
-      await sound.playAsync();
-    } catch (e) {}
-  };
-
-  const atenderChamada = () => socket?.emit('chamada_aceita', { destinoId: chamadaAtiva.peer.id });
-  const rejeitarChamada = () => socket?.emit('chamada_rejeitada', { destinoId: chamadaAtiva.peer.id });
-  const desligarChamada = () => socket?.emit('chamada_encerrar', { destinoId: chamadaAtiva.peer.id });
-
-  if (chamadaAtiva) {
-    return (
-      <View style={styles.callOverlay}>
-        <Animated.View style={[styles.callPulseRing, { transform: [{ scale: callPulseAnim }] }]} />
-        <View style={styles.callAvatar}>
-          <Text style={styles.callAvatarText}>{chamadaAtiva.peer.nome.charAt(0).toUpperCase()}</Text>
-        </View>
-        <Text style={styles.callName}>{chamadaAtiva.peer.nome}</Text>
-        <Text style={styles.callStatusText}>{chamadaAtiva.state === 'incoming' ? 'A receber chamada VoIP...' : 'Chamada em curso...'}</Text>
-        
-        <View style={styles.callActions}>
-          {chamadaAtiva.state === 'incoming' && (
-            <TouchableOpacity style={styles.btnCallAccept} onPress={atenderChamada}>
-              <MaterialCommunityIcons name="phone" size={32} color="#fff" />
-            </TouchableOpacity>
-          )}
-          <TouchableOpacity style={styles.btnCallReject} onPress={chamadaAtiva.state === 'incoming' ? rejeitarChamada : desligarChamada}>
-            <MaterialCommunityIcons name="phone-hangup" size={32} color="#fff" />
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  }
-
-  if (!contatoAtivo) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.openDrawer()} style={{ padding: 5 }}>
-            <Ionicons name="menu" size={28} color="#059669" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Central de Colaboração</Text>
-          <View style={{ width: 28 }} />
-        </View>
-        <FlatList
-          data={contatosDb || []} 
-          keyExtractor={c => String(c?.id || Math.random())}
-          renderItem={({ item }) => {
-            if (!item) return null;
-            const unread = (naoLidasPorContato || {})[item.id] || 0;
-            return (
-              <TouchableOpacity style={[styles.contactItem, unread > 0 && styles.contactItemUnread]} onPress={() => setContatoAtivo(item)}>
-                <View style={styles.avatar}><Text style={styles.avatarText}>{item.nome ? item.nome.charAt(0).toUpperCase() : 'U'}</Text></View>
-                <View style={styles.contactInfo}>
-                  <Text style={styles.contactName}>{item.nome || 'Desconhecido'}</Text>
-                  <Text style={styles.contactRole}>{item.cargo || ''}</Text>
-                </View>
-                {unread > 0 && <View style={styles.badge}><Text style={styles.badgeText}>{unread}</Text></View>}
-              </TouchableOpacity>
-            );
-          }}
-        />
-      </SafeAreaView>
-    );
-  }
-
-  const mensagensExibidas = (historicoChat || []).filter(m => 
-    (String(m?.remetenteId) === String(contatoAtivo?.id) && m?.tipo === 'received') || 
-    (String(m?.destinoId) === String(contatoAtivo?.id) && m?.tipo === 'sent') ||
-    (String(m?.destinoId) === 'todos')
-  );
-
-  const renderItem = ({ item }) => {
-    if (!item) return null;
-    const isSent = item.tipo === 'sent';
-    const textoOriginal = item.texto || ''; 
-    const isAudio = textoOriginal.startsWith('[AUDIO]');
-    const isFile = textoOriginal.startsWith('[FILE:');
-
-    let content = <Text style={[styles.msgText, isSent ? styles.msgTextSent : {}]}>{textoOriginal.replace(/\[REP:.*?\]\s*/, '')}</Text>;
-    
-    if (isAudio) {
-      content = (
-        <TouchableOpacity style={styles.audioBtn} onPress={() => tocarAudio(textoOriginal.substring(7))}>
-          <Ionicons name={somAtual ? "pause" : "play"} size={20} color={isSent ? "#fff" : "#059669"} />
-          <Text style={[styles.msgText, isSent ? styles.msgTextSent : {}]}>Mensagem de Voz</Text>
-        </TouchableOpacity>
-      );
-    } else if (isFile && textoOriginal.includes('image/')) {
-      const src = textoOriginal.substring(textoOriginal.indexOf(']') + 1);
-      content = <Image source={{ uri: src }} style={styles.chatImage} />;
-    }
-
-    return (
-      <View style={[styles.msgWrapper, isSent ? styles.msgSent : styles.msgReceived]}>
-        <View style={[styles.msgBubble, isSent ? styles.bubbleSent : styles.bubbleReceived]}>
-          {content}
-          <View style={styles.msgMeta}>
-            <Text style={[styles.msgTime, isSent ? {color: 'rgba(255,255,255,0.8)'} : {}]}>
-              {new Date(item.data || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-            </Text>
-            {isSent && <Ionicons name="checkmark-done" size={15} color="#fff" style={{ marginLeft: 4 }} />}
-          </View>
-        </View>
-      </View>
-    );
-  };
+  const quickReplies = ["Estou no local 📍", "Anomalia resolvida ✅", "Aguardando peças ⏳", "Apoio tático 🆘"];
+  
+  // Simulação
+  const mensagens = [
+    { id: 1, texto: "Sistema TermoSync estabeleceu ligação ponto-a-ponto cifrada.", tipo: 'system' },
+    { id: 2, texto: "Estou no corredor de congelados, a porta estava mal fechada.", tipo: 'sent', hora: "14:30" },
+    { id: 3, texto: "Recebido. Verifica a borracha de vedação por favor.", tipo: 'received', hora: "14:32" }
+  ];
 
   return (
     <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : null}>
-        
-        <View style={styles.chatHeader}>
-          <TouchableOpacity onPress={() => setContatoAtivo(null)} style={{ padding: 5 }}>
-            <Ionicons name="arrow-back" size={24} color="#64748b" />
-          </TouchableOpacity>
-          <View style={styles.chatHeaderInfo}>
-            <View style={styles.smallAvatar}>
-              <Text style={styles.smallAvatarText}>{contatoAtivo?.nome ? contatoAtivo.nome.charAt(0).toUpperCase() : 'U'}</Text>
-            </View>
-            <View>
-              <Text style={styles.chatHeaderName}>{contatoAtivo?.nome || 'Utilizador'}</Text>
-              <Text style={styles.chatHeaderStatus}>{contatoAtivo?.cargo || ''}</Text>
-            </View>
+      {/* HEADER TÁTICO */}
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.btnBack} onPress={() => navigation.goBack()}>
+          <ArrowLeft size={24} color={theme.textMain} />
+        </TouchableOpacity>
+        <View style={styles.headerInfo}>
+          <Text style={styles.headerName}>Equipa de Manutenção</Text>
+          <View style={styles.statusRow}>
+            <View style={styles.statusDot} />
+            <Text style={styles.statusText}>Link Seguro Estabelecido</Text>
           </View>
-          <TouchableOpacity onPress={() => socket?.emit('chamada_iniciar', { remetenteId: userId, remetenteNome: nomeLogado, destinoId: contatoAtivo?.id })} style={styles.btnCallHeader}>
-            <MaterialCommunityIcons name="phone" size={20} color="#059669" />
-          </TouchableOpacity>
         </View>
+        <TouchableOpacity style={styles.btnRadio}>
+          <Radio size={20} color={theme.primary} />
+        </TouchableOpacity>
+      </View>
 
-        <FlatList
-          ref={flatListRef}
-          data={mensagensExibidas}
-          keyExtractor={item => String(item?.id || Math.random())}
-          renderItem={renderItem}
-          contentContainerStyle={styles.chatHistory}
-          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
-          onLayout={() => flatListRef.current?.scrollToEnd({ animated: true })}
-        />
+      <View style={styles.secureBanner}>
+        <Shield size={12} color={theme.primary} />
+        <Text style={styles.secureText}>Canal Tático E2E (AES-256)</Text>
+      </View>
 
-        <View style={styles.inputArea}>
-          {!isRecording ? (
-            <>
-              <TouchableOpacity style={styles.iconBtn} onPress={anexarImagem}>
-                <MaterialCommunityIcons name="paperclip" size={24} color="#64748b" />
-              </TouchableOpacity>
-              <TextInput 
-                style={styles.input} 
-                placeholder="Mensagem..." 
-                value={mensagem} 
-                onChangeText={setMensagem} 
-                multiline
-              />
-              {mensagem.trim() ? (
-                <TouchableOpacity style={styles.sendBtn} onPress={enviarMensagemTexto}>
-                  <MaterialCommunityIcons name="send" size={20} color="#fff" />
-                </TouchableOpacity>
-              ) : (
-                <TouchableOpacity style={styles.iconBtn} onPress={iniciarGravacao}>
-                  <MaterialCommunityIcons name="microphone" size={26} color="#64748b" />
-                </TouchableOpacity>
-              )}
-            </>
-          ) : (
-            <View style={styles.recordingArea}>
-              <MaterialCommunityIcons name="microphone" size={26} color="#ef4444" style={{ opacity: 0.8 }} />
-              <Text style={styles.recordingText}>A gravar áudio...</Text>
-              <TouchableOpacity style={styles.sendBtnAudio} onPress={pararEEnviarGravacao}>
-                <MaterialCommunityIcons name="send" size={20} color="#fff" />
-              </TouchableOpacity>
+      {/* ÁREA DE MENSAGENS */}
+      <ScrollView contentContainerStyle={styles.chatArea}>
+        {mensagens.map(msg => {
+          if (msg.tipo === 'system') {
+            return (
+              <View key={msg.id} style={styles.systemBubble}>
+                <Terminal size={14} color={theme.textMuted} />
+                <Text style={styles.systemText}>{msg.texto}</Text>
+              </View>
+            );
+          }
+          
+          const isSent = msg.tipo === 'sent';
+          return (
+            <View key={msg.id} style={[styles.msgWrapper, isSent ? styles.msgSent : styles.msgReceived]}>
+              <View style={[styles.msgBubble, isSent ? styles.bubbleSent : styles.bubbleReceived]}>
+                <Text style={[styles.msgText, isSent && {color: 'white'}]}>{msg.texto}</Text>
+              </View>
+              <Text style={styles.msgMeta}>{msg.hora}</Text>
             </View>
-          )}
+          );
+        })}
+      </ScrollView>
+
+      {/* INPUT E QUICK REPLIES */}
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <View style={styles.inputContainer}>
+          
+          {/* Quick Replies Strip */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.quickReplyScroll} contentContainerStyle={{ paddingHorizontal: 15 }}>
+            {quickReplies.map((reply, index) => (
+              <TouchableOpacity key={index} style={styles.quickReplyBtn} onPress={() => setMensagem(reply)}>
+                <Text style={styles.quickReplyText}>{reply}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          {/* Barra de Digitação */}
+          <View style={styles.inputRow}>
+            <TouchableOpacity style={styles.btnAttach}>
+              <Paperclip size={20} color={theme.textMuted} />
+            </TouchableOpacity>
+            
+            <View style={styles.textInputWrapper}>
+              <TextInput 
+                style={styles.textInput}
+                placeholder="Transmita comando ou mensagem..."
+                placeholderTextColor={theme.textMuted}
+                value={mensagem}
+                onChangeText={setMensagem}
+              />
+            </View>
+
+            {mensagem.trim().length > 0 ? (
+              <TouchableOpacity style={styles.btnSend}>
+                <Send size={18} color="white" style={{ marginLeft: -2 }} />
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity style={styles.btnMic}>
+                <Mic size={20} color={theme.primary} />
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -267,61 +125,45 @@ export default function ChatScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f8fafc' },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 15, backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#e2e8f0', paddingTop: Platform.OS === 'ios' ? 50 : 15 },
-  headerTitle: { fontSize: 18, fontWeight: '900', color: '#0f172a' },
+  container: { flex: 1, backgroundColor: theme.bg },
   
-  contactItem: { flexDirection: 'row', alignItems: 'center', padding: 15, backgroundColor: '#fff', marginHorizontal: 10, marginTop: 10, borderRadius: 16, elevation: 1, shadowColor: '#000', shadowOpacity: 0.05, shadowOffset: {width: 0, height: 2} },
-  contactItemUnread: { backgroundColor: '#f0f9ff', borderColor: '#bae6fd', borderWidth: 1 },
-  avatar: { width: 50, height: 50, borderRadius: 16, backgroundColor: '#059669', alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: '#fff', fontSize: 20, fontWeight: '900' },
-  contactInfo: { flex: 1, marginLeft: 15 },
-  contactName: { fontSize: 16, fontWeight: '800', color: '#0f172a' },
-  contactRole: { fontSize: 12, color: '#64748b', marginTop: 4, textTransform: 'uppercase', fontWeight: '700' },
-  badge: { backgroundColor: '#38bdf8', borderRadius: 20, minWidth: 24, height: 24, alignItems: 'center', justifyContent: 'center' },
-  badgeText: { color: '#fff', fontSize: 12, fontWeight: '900' },
+  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 15, paddingVertical: 12, backgroundColor: theme.card, borderBottomWidth: 1, borderBottomColor: theme.border },
+  btnBack: { padding: 5, marginRight: 10 },
+  headerInfo: { flex: 1 },
+  headerName: { color: theme.textMain, fontSize: 16, fontWeight: '800' },
+  statusRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
+  statusDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: theme.primary, marginRight: 6 },
+  statusText: { color: theme.primary, fontSize: 12, fontWeight: '600' },
+  btnRadio: { backgroundColor: 'rgba(5, 150, 105, 0.1)', padding: 10, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(5, 150, 105, 0.3)' },
+
+  secureBanner: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(5, 150, 105, 0.1)', paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: 'rgba(5, 150, 105, 0.2)' },
+  secureText: { color: theme.primary, fontSize: 10, fontWeight: 'bold', textTransform: 'uppercase', marginLeft: 6, letterSpacing: 1 },
+
+  chatArea: { padding: 15, paddingBottom: 20 },
   
-  chatHeader: { flexDirection: 'row', alignItems: 'center', padding: 15, paddingTop: Platform.OS === 'ios' ? 50 : 15, backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#e2e8f0', elevation: 4, zIndex: 10 },
-  chatHeaderInfo: { flex: 1, flexDirection: 'row', alignItems: 'center', marginLeft: 10 },
-  smallAvatar: { width: 42, height: 42, borderRadius: 14, backgroundColor: '#059669', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
-  smallAvatarText: { color: '#fff', fontSize: 18, fontWeight: '900' },
-  chatHeaderName: { fontSize: 16, fontWeight: '900', color: '#0f172a' },
-  chatHeaderStatus: { fontSize: 12, color: '#10b981', fontWeight: '700' },
-  btnCallHeader: { backgroundColor: '#ecfdf5', padding: 10, borderRadius: 50 },
-  
-  chatHistory: { padding: 15, paddingBottom: 30 },
-  msgWrapper: { marginBottom: 15, maxWidth: '80%' },
+  systemBubble: { flexDirection: 'row', alignItems: 'center', alignSelf: 'center', backgroundColor: 'rgba(255,255,255,0.05)', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, borderWidth: 1, borderColor: theme.border, marginBottom: 15 },
+  systemText: { color: theme.textMuted, fontSize: 11, fontFamily: 'monospace', marginLeft: 8 },
+
+  msgWrapper: { maxWidth: '80%', marginBottom: 15 },
   msgSent: { alignSelf: 'flex-end' },
   msgReceived: { alignSelf: 'flex-start' },
   
-  // 🔴 Cantos assimétricos fieis à versão Web
-  msgBubble: { padding: 12, paddingHorizontal: 16, elevation: 1, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1 },
-  bubbleSent: { backgroundColor: '#059669', borderTopLeftRadius: 18, borderTopRightRadius: 18, borderBottomLeftRadius: 18, borderBottomRightRadius: 4 },
-  bubbleReceived: { backgroundColor: '#ffffff', borderTopLeftRadius: 18, borderTopRightRadius: 18, borderBottomLeftRadius: 4, borderBottomRightRadius: 18, borderWidth: 1, borderColor: '#e2e8f0' },
-  
-  msgText: { fontSize: 15, color: '#0f172a', lineHeight: 22 },
-  msgTextSent: { color: '#ffffff' },
-  msgMeta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', marginTop: 6 },
-  msgTime: { fontSize: 10, color: '#64748b', fontWeight: '600' },
-  chatImage: { width: 220, height: 220, borderRadius: 12, marginBottom: 5 },
-  audioBtn: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  
-  inputArea: { flexDirection: 'row', alignItems: 'center', padding: 10, paddingBottom: Platform.OS === 'ios' ? 20 : 10, backgroundColor: '#fff', borderTopWidth: 1, borderColor: '#e2e8f0' },
-  input: { flex: 1, backgroundColor: '#f1f5f9', borderRadius: 24, paddingHorizontal: 20, paddingTop: 12, paddingBottom: 12, maxHeight: 120, fontSize: 15, color: '#0f172a' },
-  iconBtn: { padding: 10 },
-  sendBtn: { width: 46, height: 46, borderRadius: 23, backgroundColor: '#059669', alignItems: 'center', justifyContent: 'center', marginLeft: 8, elevation: 3 },
-  sendBtnAudio: { width: 46, height: 46, borderRadius: 23, backgroundColor: '#ef4444', alignItems: 'center', justifyContent: 'center', elevation: 3 },
-  recordingArea: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 15 },
-  recordingText: { color: '#ef4444', fontWeight: '800', flex: 1, marginLeft: 10, fontSize: 15 },
+  msgBubble: { padding: 14, borderRadius: 18, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 5 },
+  bubbleSent: { backgroundColor: theme.primary, borderBottomRightRadius: 4 },
+  bubbleReceived: { backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderBottomLeftRadius: 4 },
+  msgText: { color: theme.textMain, fontSize: 15, lineHeight: 22 },
+  msgMeta: { color: theme.textMuted, fontSize: 10, marginTop: 4, alignSelf: 'flex-end', fontWeight: 'bold' },
 
-  // 🔴 Tela de Chamada VoIP Imersiva
-  callOverlay: { flex: 1, backgroundColor: '#0f172a', justifyContent: 'center', alignItems: 'center' },
-  callPulseRing: { position: 'absolute', width: 200, height: 200, borderRadius: 100, borderWidth: 2, borderColor: '#38bdf8', opacity: 0.5 },
-  callAvatar: { width: 140, height: 140, borderRadius: 70, backgroundColor: '#059669', justifyContent: 'center', alignItems: 'center', elevation: 10, marginBottom: 20 },
-  callAvatarText: { fontSize: 60, fontWeight: '900', color: '#fff' },
-  callName: { fontSize: 28, fontWeight: '900', color: '#fff', marginBottom: 10 },
-  callStatusText: { fontSize: 16, color: '#94a3b8', fontWeight: '600', marginBottom: 50 },
-  callActions: { flexDirection: 'row', gap: 40, marginTop: 40 },
-  btnCallAccept: { width: 75, height: 75, borderRadius: 37.5, backgroundColor: '#10b981', justifyContent: 'center', alignItems: 'center', elevation: 5 },
-  btnCallReject: { width: 75, height: 75, borderRadius: 37.5, backgroundColor: '#ef4444', justifyContent: 'center', alignItems: 'center', elevation: 5 }
+  inputContainer: { backgroundColor: theme.card, borderTopWidth: 1, borderTopColor: theme.border, paddingBottom: Platform.OS === 'ios' ? 10 : 15 },
+  quickReplyScroll: { paddingVertical: 12 },
+  quickReplyBtn: { backgroundColor: theme.bg, borderWidth: 1, borderColor: theme.border, paddingHorizontal: 15, paddingVertical: 8, borderRadius: 20, marginRight: 10 },
+  quickReplyText: { color: theme.textMain, fontSize: 13, fontWeight: '600' },
+
+  inputRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 15 },
+  btnAttach: { padding: 10 },
+  textInputWrapper: { flex: 1, backgroundColor: theme.bg, borderWidth: 1, borderColor: theme.border, borderRadius: 24, paddingHorizontal: 15, paddingVertical: Platform.OS === 'ios' ? 12 : 8, marginHorizontal: 8 },
+  textInput: { color: theme.textMain, fontSize: 15 },
+  
+  btnMic: { padding: 10, backgroundColor: 'rgba(5, 150, 105, 0.1)', borderRadius: 20 },
+  btnSend: { backgroundColor: theme.primary, width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center' }
 });

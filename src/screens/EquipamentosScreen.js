@@ -1,152 +1,223 @@
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { useContext, useState } from 'react';
-import { Platform, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { AppContext } from '../context/AppContext';
+import {
+  AlertTriangle, ClipboardCheck, Edit,
+  PlusCircle,
+  Search,
+  Server,
+  Settings,
+  Thermometer,
+  X,
+  Zap
+} from 'lucide-react-native';
+import { useMemo, useState } from 'react';
+import {
+  SafeAreaView,
+  ScrollView, StyleSheet,
+  Text, TextInput,
+  TouchableOpacity,
+  View
+} from 'react-native';
 
-export default function EquipamentosScreen({ navigation }) {
-  const { equipamentos, userRole, filialAtiva, isOffline, api, carregarDashboard, filiaisDb } = useContext(AppContext);
-  
-  const [mostrarForm, setMostrarForm] = useState(false);
-  const [formEquip, setFormEquip] = useState({ nome: '', temp_min: '0', temp_max: '8', umidade_min: '60', umidade_max: '85', intervalo_degelo: '6', filial: filialAtiva });
+const theme = {
+  bg: '#020617', card: '#0f172a', textMain: '#f8fafc', textMuted: '#94a3b8',
+  border: '#1e293b', primary: '#059669', secondary: '#10b981', danger: '#ef4444',
+  warning: '#f59e0b', info: '#38bdf8'
+};
 
-  const equipamentosDaFilial = filialAtiva === 'Todas' ? (equipamentos || []) : (equipamentos || []).filter(eq => eq.filial === filialAtiva);
+export default function EquipamentosScreen() {
+  const [buscaAtivo, setBuscaAtivo] = useState('');
+  const [isFormOpen, setIsFormOpen] = useState(false);
 
-  const aplicarNormaANVISA = () => {
-    setFormEquip(prev => ({ ...prev, temp_min: '2', temp_max: '8', umidade_min: '60', umidade_max: '85', intervalo_degelo: '6' }));
-    alert("Padrão Legal (ANVISA) para Frios/Vacinas aplicado!");
-  };
+  // Simulação de Dados
+  const ativosExibidos = [
+    { id: 1, nome: 'CONG-01 Frios', filial: 'Loja Centro', setor: 'Laticínios', tipo: 'Congelador', temp_min: -20, temp_max: -15, data_calibracao: '2025-05-10', motor_ligado: true, em_degelo: false },
+    { id: 2, nome: 'REF-04 Ilha', filial: 'Loja Norte', setor: 'Talho', tipo: 'Refrigerador Aberto', temp_min: 2, temp_max: 6, data_calibracao: '2026-02-15', motor_ligado: false, em_degelo: false },
+  ];
 
-  const salvarNovoEquipamento = async () => {
-    if (isOffline) return alert('Ação bloqueada offline.');
-    if (!formEquip.nome) return alert('Preencha o nome do equipamento.');
-    try {
-      await api.post('/equipamentos', formEquip);
-      setMostrarForm(false);
-      carregarDashboard();
-      alert('Equipamento salvo!');
-    } catch (e) { alert('Erro ao salvar equipamento.'); }
-  };
+  // KPIs Preditivos
+  const kpis = useMemo(() => {
+    let riscoCalib = 0; let offlines = 0;
+    ativosExibidos.forEach(eq => {
+      const diasCalib = eq.data_calibracao ? Math.floor((Date.now() - new Date(eq.data_calibracao).getTime()) / (1000 * 60 * 60 * 24)) : 0;
+      if (diasCalib > 330) riscoCalib++;
+      if (!eq.motor_ligado) offlines++;
+    });
+    return { total: ativosExibidos.length, riscoCalib, offlines };
+  }, [ativosExibidos]);
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.openDrawer()} style={{ padding: 5 }}>
-          <Ionicons name="menu" size={28} color="#059669" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Central de Máquinas</Text>
-        <View style={{ width: 28 }} />
-      </View>
-
-      <ScrollView contentContainerStyle={styles.listContainer}>
+      <ScrollView contentContainerStyle={styles.scrollContent}>
         
-        <View style={styles.equipamentosHeader}>
-          <TouchableOpacity style={styles.btnNewEquip} onPress={() => setMostrarForm(!mostrarForm)}>
-            <MaterialCommunityIcons name={mostrarForm ? "close" : "plus-circle"} size={20} color="#fff" />
-            <Text style={styles.btnNewEquipText}>{mostrarForm ? 'Cancelar' : 'Novo Equipamento'}</Text>
+        {/* CABEÇALHO */}
+        <View style={styles.header}>
+          <View style={styles.titleRow}>
+            <Server size={24} color={theme.info} />
+            <View style={{ marginLeft: 10 }}>
+              <Text style={styles.title}>Inventário IoT</Text>
+              <Text style={styles.subtitle}>Metrologia e configuração de SLA</Text>
+            </View>
+          </View>
+          
+          <TouchableOpacity style={[styles.btnToggleForm, isFormOpen && styles.btnToggleFormActive]} onPress={() => setIsFormOpen(!isFormOpen)}>
+            {isFormOpen ? <X size={20} color={theme.textMain} /> : <PlusCircle size={20} color="white" />}
           </TouchableOpacity>
         </View>
 
-        {mostrarForm && (
-          <View style={styles.formCard}>
-            <View style={styles.formHeaderLine}>
-              <Text style={styles.formTitle}>Registar Ativo IoT</Text>
-              <TouchableOpacity style={styles.btnAnvisa} onPress={aplicarNormaANVISA}>
-                <MaterialCommunityIcons name="shield-check" size={16} color="#38bdf8" />
-                <Text style={styles.btnAnvisaText}>Norma ANVISA</Text>
-              </TouchableOpacity>
-            </View>
+        {/* SEARCH BAR */}
+        <View style={styles.searchBox}>
+          <Search size={18} color={theme.textMuted} />
+          <TextInput 
+            style={styles.searchInput}
+            placeholder="Procurar ativo ou setor..."
+            placeholderTextColor={theme.textMuted}
+            value={buscaAtivo}
+            onChangeText={setBuscaAtivo}
+          />
+        </View>
 
-            <TextInput style={styles.input} placeholder="Identificador da Máquina" value={formEquip.nome} onChangeText={t => setFormEquip({...formEquip, nome: t})} />
+        {/* KPIS PREDITIVOS */}
+        <View style={styles.kpiRow}>
+          <View style={styles.kpiCard}>
+            <View style={[styles.kpiIconBox, { backgroundColor: 'rgba(56, 189, 248, 0.1)' }]}><Server size={18} color={theme.info}/></View>
+            <View><Text style={styles.kpiVal}>{kpis.total}</Text><Text style={styles.kpiLbl}>Instalados</Text></View>
+          </View>
+          <View style={[styles.kpiCard, kpis.riscoCalib > 0 && styles.kpiCardDanger]}>
+            <View style={[styles.kpiIconBox, { backgroundColor: 'rgba(239, 68, 68, 0.1)' }]}><ClipboardCheck size={18} color={theme.danger}/></View>
+            <View><Text style={[styles.kpiVal, kpis.riscoCalib > 0 && {color: theme.danger}]}>{kpis.riscoCalib}</Text><Text style={styles.kpiLbl}>Risco Calib.</Text></View>
+          </View>
+          <View style={[styles.kpiCard, kpis.offlines > 0 && styles.kpiCardWarning]}>
+            <View style={[styles.kpiIconBox, { backgroundColor: 'rgba(245, 158, 11, 0.1)' }]}><AlertTriangle size={18} color={theme.warning}/></View>
+            <View><Text style={[styles.kpiVal, kpis.offlines > 0 && {color: theme.warning}]}>{kpis.offlines}</Text><Text style={styles.kpiLbl}>Inativos</Text></View>
+          </View>
+        </View>
+
+        {/* SMART PANEL (FORMULÁRIO OCULTO) */}
+        {isFormOpen && (
+          <View style={styles.formPanel}>
+            <View style={styles.formHeader}>
+              <Settings size={18} color={theme.primary} />
+              <Text style={styles.formTitle}>Perfil do Novo Ativo</Text>
+            </View>
             
-            <View style={styles.grid2Cols}>
-              <TextInput style={styles.input} placeholder="Temp Mín (°C)" keyboardType="numeric" value={formEquip.temp_min} onChangeText={t => setFormEquip({...formEquip, temp_min: t})} />
-              <TextInput style={styles.input} placeholder="Temp Máx (°C)" keyboardType="numeric" value={formEquip.temp_max} onChangeText={t => setFormEquip({...formEquip, temp_max: t})} />
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Identificador na Rede</Text>
+              <TextInput style={styles.input} placeholder="Ex: CONG-01 Corredor" placeholderTextColor={theme.textMuted} />
             </View>
+            
+            <TouchableOpacity style={styles.btnAnvisa}>
+              <Zap size={14} color={theme.secondary} />
+              <Text style={styles.btnAnvisaText}>Aplicar Norma ANVISA</Text>
+            </TouchableOpacity>
 
-            <TouchableOpacity style={styles.btnSave} onPress={salvarNovoEquipamento}>
-              <Text style={styles.btnSaveText}>Salvar no Sistema</Text>
+            <TouchableOpacity style={styles.btnSubmit}>
+              <Text style={styles.btnSubmitText}>Consolidar Ativo na Base</Text>
             </TouchableOpacity>
           </View>
         )}
 
-        {equipamentosDaFilial.map(eq => {
-          const calibracaoVencida = new Date(eq.data_calibracao) < new Date();
-          const ringColor = !eq.motor_ligado ? '#ef4444' : (eq.em_degelo ? '#38bdf8' : '#10b981');
-          
+        {/* LISTA DE EQUIPAMENTOS */}
+        {ativosExibidos.map(eq => {
+          const diasCalib = eq.data_calibracao ? Math.floor((Date.now() - new Date(eq.data_calibracao).getTime()) / (1000 * 60 * 60 * 24)) : 0;
+          const calibPercent = Math.min(100, Math.max(0, (diasCalib / 365) * 100));
+          const isExpirado = diasCalib > 365;
+          const statusColor = eq.em_degelo ? theme.secondary : (!eq.motor_ligado ? theme.danger : theme.success);
+
           return (
             <View key={eq.id} style={styles.equipCard}>
               <View style={styles.equipHeader}>
-                <View style={styles.equipTitleBox}>
-                  <View style={[styles.statusRing, { backgroundColor: ringColor, shadowColor: ringColor }]} />
-                  <View>
-                    <Text style={styles.equipName}>{eq.nome}</Text>
-                    <Text style={styles.equipSubtitle}>{eq.filial} • {eq.setor || 'Geral'}</Text>
-                  </View>
+                <View style={styles.nodeLocation}>
+                  <View style={[styles.statusRing, { backgroundColor: statusColor }]} />
+                  <Text style={styles.equipFilial}>{eq.filial}</Text>
                 </View>
-                <TouchableOpacity style={styles.btnEdit} disabled={isOffline}>
-                  <MaterialCommunityIcons name="pencil" size={18} color="#3b82f6" />
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.limitsBox}>
-                <View style={styles.limitTag}>
-                  <MaterialCommunityIcons name="thermometer" size={14} color="#ef4444" />
-                  <Text style={styles.limitText}>{eq.temp_min}°C a {eq.temp_max}°C</Text>
-                </View>
-                <View style={styles.limitTag}>
-                  <MaterialCommunityIcons name="water-percent" size={14} color="#38bdf8" />
-                  <Text style={styles.limitText}>{eq.umidade_min || 40}% a {eq.umidade_max || 80}%</Text>
+                <View style={styles.equipActions}>
+                  <TouchableOpacity style={styles.iconBtn}><Edit size={16} color={theme.textMuted} /></TouchableOpacity>
+                  <TouchableOpacity style={styles.iconBtn}><X size={16} color={theme.danger} /></TouchableOpacity>
                 </View>
               </View>
 
-              <View style={[styles.calibBadge, calibracaoVencida ? styles.calibCritical : styles.calibOk]}>
-                <MaterialCommunityIcons name={calibracaoVencida ? "alert-circle" : "check-decagram"} size={16} color={calibracaoVencida ? "#ef4444" : "#10b981"} />
-                <Text style={[styles.calibText, calibracaoVencida ? {color: '#ef4444'} : {color: '#10b981'}]}>
-                  Calibração: {eq.data_calibracao ? new Date(eq.data_calibracao).toLocaleDateString() : 'Pendente'}
-                </Text>
+              <Text style={styles.equipName}>{eq.nome}</Text>
+              <Text style={styles.equipType}>{eq.tipo} • {eq.setor}</Text>
+
+              {/* Barra de Metrologia Mobile */}
+              <View style={styles.metrologyBox}>
+                <View style={styles.metroLabels}>
+                  <Text style={[styles.metroText, { color: isExpirado ? theme.danger : theme.textMuted }]}>
+                    {isExpirado ? '⚠️ Certificado Expirado' : 'Validade de Calibração'}
+                  </Text>
+                  <Text style={styles.metroDays}>{diasCalib} dias</Text>
+                </View>
+                <View style={styles.metroTrack}>
+                  <View style={[styles.metroFill, { width: `${calibPercent}%`, backgroundColor: isExpirado ? theme.danger : theme.success }]} />
+                </View>
+              </View>
+
+              <View style={styles.slaBox}>
+                <View style={styles.slaTag}>
+                  <Thermometer size={12} color={theme.danger} />
+                  <Text style={styles.slaTagText}>{eq.temp_min}°C a {eq.temp_max}°C</Text>
+                </View>
               </View>
             </View>
           );
         })}
+
       </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f8fafc' },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 15, backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#e2e8f0', paddingTop: Platform.OS === 'ios' ? 50 : 15 },
-  headerTitle: { fontSize: 18, fontWeight: '900', color: '#0f172a' },
-  listContainer: { padding: 15, paddingBottom: 40 },
+  container: { flex: 1, backgroundColor: theme.bg },
+  scrollContent: { padding: 15, paddingBottom: 40 },
   
-  equipamentosHeader: { flexDirection: 'row', justifyContent: 'flex-end', marginBottom: 15 },
-  btnNewEquip: { backgroundColor: '#059669', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 15, paddingVertical: 10, borderRadius: 12, gap: 8, elevation: 2 },
-  btnNewEquipText: { color: '#fff', fontWeight: '800', fontSize: 14 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  titleRow: { flexDirection: 'row', alignItems: 'center' },
+  title: { color: theme.textMain, fontSize: 20, fontWeight: '900', letterSpacing: -0.5 },
+  subtitle: { color: theme.textMuted, fontSize: 12, fontWeight: '600' },
+  btnToggleForm: { backgroundColor: theme.primary, padding: 10, borderRadius: 12, shadowColor: theme.primary, shadowOpacity: 0.3, shadowRadius: 10 },
+  btnToggleFormActive: { backgroundColor: 'transparent', borderWidth: 1, borderColor: theme.border },
 
-  formCard: { backgroundColor: '#fff', padding: 20, borderRadius: 16, marginBottom: 20, borderWidth: 1, borderColor: '#e2e8f0', elevation: 3 },
-  formHeaderLine: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
-  formTitle: { fontSize: 16, fontWeight: '900', color: '#0f172a' },
-  btnAnvisa: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(56, 189, 248, 0.1)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(56, 189, 248, 0.3)' },
-  btnAnvisaText: { color: '#38bdf8', fontWeight: '800', fontSize: 12 },
-  input: { backgroundColor: '#f1f5f9', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 10, padding: 12, marginBottom: 12, color: '#0f172a', fontWeight: '600' },
-  grid2Cols: { flexDirection: 'row', gap: 10 },
-  btnSave: { backgroundColor: '#059669', padding: 14, borderRadius: 10, alignItems: 'center', marginTop: 10 },
-  btnSaveText: { color: '#fff', fontWeight: '900', fontSize: 14 },
-  
-  equipCard: { backgroundColor: '#fff', borderRadius: 16, padding: 18, marginBottom: 15, elevation: 2, shadowColor: '#000', shadowOffset: {width: 0, height: 2}, shadowOpacity: 0.05, borderWidth: 1, borderColor: '#f1f5f9' },
-  equipHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
-  equipTitleBox: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  statusRing: { width: 12, height: 12, borderRadius: 6, elevation: 4 },
-  equipName: { fontSize: 16, fontWeight: '900', color: '#0f172a' },
-  equipSubtitle: { fontSize: 11, fontWeight: '700', color: '#64748b', textTransform: 'uppercase', marginTop: 2 },
-  btnEdit: { backgroundColor: 'rgba(59, 130, 246, 0.08)', padding: 8, borderRadius: 8 },
-  
-  limitsBox: { flexDirection: 'row', gap: 10, marginBottom: 15, paddingBottom: 15, borderBottomWidth: 1, borderColor: '#f1f5f9' },
-  limitTag: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
-  limitText: { fontSize: 12, fontWeight: '700', color: '#334155' },
-  
-  calibBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, borderWidth: 1, alignSelf: 'flex-start' },
-  calibOk: { backgroundColor: 'rgba(16, 185, 129, 0.08)', borderColor: 'rgba(16, 185, 129, 0.2)' },
-  calibCritical: { backgroundColor: 'rgba(239, 68, 68, 0.08)', borderColor: 'rgba(239, 68, 68, 0.2)' },
-  calibText: { fontSize: 12, fontWeight: '800' }
+  searchBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 12, paddingHorizontal: 15, paddingVertical: 10, marginBottom: 20 },
+  searchInput: { flex: 1, color: theme.textMain, marginLeft: 10, fontSize: 15 },
+
+  kpiRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20 },
+  kpiCard: { flex: 1, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 12, padding: 10, marginHorizontal: 4, alignItems: 'center', flexDirection: 'row', gap: 8 },
+  kpiCardDanger: { borderColor: 'rgba(239, 68, 68, 0.4)' },
+  kpiCardWarning: { borderColor: 'rgba(245, 158, 11, 0.4)' },
+  kpiIconBox: { padding: 8, borderRadius: 10 },
+  kpiVal: { color: theme.textMain, fontSize: 16, fontWeight: '900' },
+  kpiLbl: { color: theme.textMuted, fontSize: 9, fontWeight: 'bold', textTransform: 'uppercase' },
+
+  formPanel: { backgroundColor: 'rgba(255,255,255,0.02)', borderWidth: 1, borderColor: theme.primary, borderRadius: 16, padding: 15, marginBottom: 20 },
+  formHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 15, borderBottomWidth: 1, borderBottomColor: theme.border, paddingBottom: 10 },
+  formTitle: { color: theme.textMain, fontSize: 14, fontWeight: '800', textTransform: 'uppercase' },
+  inputGroup: { marginBottom: 15 },
+  label: { color: theme.textMuted, fontSize: 12, fontWeight: '700', marginBottom: 6 },
+  input: { backgroundColor: theme.bg, borderWidth: 1, borderColor: theme.border, borderRadius: 10, padding: 12, color: theme.textMain },
+  btnAnvisa: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: 'rgba(56, 189, 248, 0.1)', borderWidth: 1, borderColor: 'rgba(56, 189, 248, 0.3)', padding: 12, borderRadius: 10, marginBottom: 15 },
+  btnAnvisaText: { color: theme.secondary, fontWeight: '800', fontSize: 12 },
+  btnSubmit: { backgroundColor: theme.primary, padding: 14, borderRadius: 10, alignItems: 'center' },
+  btnSubmitText: { color: 'white', fontWeight: '800', fontSize: 14 },
+
+  equipCard: { backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 16, padding: 15, marginBottom: 15, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 5 },
+  equipHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  nodeLocation: { flexDirection: 'row', alignItems: 'center' },
+  statusRing: { width: 10, height: 10, borderRadius: 5, marginRight: 8 },
+  equipFilial: { color: theme.textMuted, fontSize: 12, fontWeight: '700', textTransform: 'uppercase' },
+  equipActions: { flexDirection: 'row', gap: 10 },
+  iconBtn: { padding: 6, backgroundColor: theme.bg, borderRadius: 8, borderWidth: 1, borderColor: theme.border },
+
+  equipName: { color: theme.textMain, fontSize: 18, fontWeight: '900' },
+  equipType: { color: theme.textMuted, fontSize: 12, fontWeight: '600', marginBottom: 15 },
+
+  metrologyBox: { marginBottom: 15 },
+  metroLabels: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
+  metroText: { fontSize: 10, fontWeight: '800', textTransform: 'uppercase' },
+  metroDays: { color: theme.textMain, fontSize: 11, fontWeight: '800' },
+  metroTrack: { height: 6, backgroundColor: theme.border, borderRadius: 3, overflow: 'hidden' },
+  metroFill: { height: '100%', borderRadius: 3 },
+
+  slaBox: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  slaTag: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: theme.bg, borderWidth: 1, borderColor: theme.border, paddingVertical: 4, paddingHorizontal: 8, borderRadius: 6 },
+  slaTagText: { color: theme.textMain, fontSize: 11, fontFamily: 'monospace', fontWeight: 'bold' }
 });
