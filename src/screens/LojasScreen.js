@@ -1,45 +1,54 @@
-import { Edit, MapPin, Store } from 'lucide-react-native';
-import { SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import axios from 'axios';
+import { MapPin, Phone, Store } from 'lucide-react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 const theme = { bg: '#020617', card: '#0f172a', textMain: '#f8fafc', textMuted: '#94a3b8', border: '#1e293b', primary: '#059669' };
 
-export default function LojasScreen() {
-  const lojas = [{ id: 1, nome: 'Loja Centro' }, { id: 2, nome: 'Loja Norte' }];
+export default function LojasScreen({ route }) {
+  const { token } = route?.params || {};
+  const [lojas, setLojas] = useState([]);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const carregarLojas = useCallback(async () => {
+    try {
+      const res = await axios.get('http://SEU_IP_LOCAL:3000/api/lojas', { headers: { Authorization: `Bearer ${token}` } });
+      setLojas(res.data);
+    } catch (e) { console.log(e); }
+  }, [token]);
+
+  useEffect(() => { carregarLojas(); }, [carregarLojas]);
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.headerBox}>
-        <View style={styles.iconCircle}><Store size={24} color={theme.primary} /></View>
-        <View style={{ flex: 1, marginLeft: 12 }}>
-          <Text style={styles.title}>Rede de Filiais</Text>
-          <Text style={styles.subtitle}>Gestão de Nós da Infraestrutura</Text>
-        </View>
-      </View>
-
-      <ScrollView contentContainerStyle={styles.content}>
+    <View style={styles.container}>
+      <Text style={styles.pageTitle}>Rede de Lojas</Text>
+      <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await carregarLojas(); setRefreshing(false); }} tintColor={theme.primary} />}>
         {lojas.map(loja => (
           <View key={loja.id} style={styles.card}>
-            <View style={styles.cardHeader}>
-              <MapPin size={18} color={theme.primary} />
-              <Text style={styles.cardTitle}>{loja.nome}</Text>
+            <View style={styles.cardTop}>
+              <View style={styles.iconBox}><Store size={20} color={theme.primary} /></View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.nome}>{loja.nome}</Text>
+                <Text style={styles.status}>{loja.status.toUpperCase()}</Text>
+              </View>
             </View>
-            <TouchableOpacity style={styles.btnAction}><Edit size={16} color={theme.textMuted}/></TouchableOpacity>
+            <View style={styles.infoRow}><MapPin size={14} color={theme.textMuted} /><Text style={styles.infoText}>{loja.endereco || 'Endereço não informado'}</Text></View>
+            <View style={styles.infoRow}><Phone size={14} color={theme.textMuted} /><Text style={styles.infoText}>{loja.telefone || 'Telefone não informado'}</Text></View>
           </View>
         ))}
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: theme.bg },
-  headerBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: theme.card, padding: 15, borderBottomWidth: 1, borderBottomColor: theme.border },
-  iconCircle: { padding: 10, backgroundColor: 'rgba(5, 150, 105, 0.15)', borderRadius: 12, borderWidth: 1, borderColor: 'rgba(5, 150, 105, 0.3)' },
-  title: { color: theme.textMain, fontSize: 18, fontWeight: '900' },
-  subtitle: { color: theme.textMuted, fontSize: 12, fontWeight: '600' },
-  content: { padding: 15 },
-  card: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: theme.card, padding: 15, borderRadius: 12, borderWidth: 1, borderColor: theme.border, marginBottom: 10 },
-  cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  cardTitle: { color: theme.textMain, fontSize: 16, fontWeight: '800' },
-  btnAction: { padding: 8, backgroundColor: theme.bg, borderRadius: 8, borderWidth: 1, borderColor: theme.border }
+  container: { flex: 1, backgroundColor: theme.bg, padding: 15 },
+  pageTitle: { fontSize: 20, fontWeight: 'bold', color: theme.textMain, marginBottom: 15 },
+  card: { backgroundColor: theme.card, padding: 15, borderRadius: 12, marginBottom: 15, borderWidth: 1, borderColor: theme.border },
+  cardTop: { flexDirection: 'row', alignItems: 'center', marginBottom: 15 },
+  iconBox: { backgroundColor: 'rgba(5, 150, 105, 0.1)', padding: 10, borderRadius: 8, marginRight: 12 },
+  nome: { color: theme.textMain, fontSize: 16, fontWeight: 'bold' },
+  status: { color: theme.primary, fontSize: 10, fontWeight: 'bold', marginTop: 4 },
+  infoRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
+  infoText: { color: theme.textMuted, fontSize: 13 }
 });

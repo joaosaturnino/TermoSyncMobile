@@ -1,78 +1,72 @@
-import { Activity, AlertTriangle, Snowflake, Thermometer, Zap } from 'lucide-react-native';
-import { SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
+import axios from 'axios';
+import { Droplets, Snowflake, Thermometer } from 'lucide-react-native';
+import { useEffect, useState } from 'react';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 
-const theme = {
-  bg: '#020617', card: '#0f172a', textMain: '#f8fafc', textMuted: '#94a3b8',
-  border: '#1e293b', success: '#10b981', danger: '#ef4444', info: '#38bdf8', warning: '#f59e0b'
-};
+const theme = { bg: '#020617', card: '#0f172a', textMain: '#f8fafc', textMuted: '#94a3b8', border: '#1e293b', primary: '#059669', info: '#38bdf8' };
 
-export default function SensoresScreen() {
-  const sensores = [
-    { id: 1, nome: 'CONG-01', temp: -18.2, temp_max: -15, motor: true, degelo: false },
-    { id: 2, nome: 'REF-04', temp: 8.5, temp_max: 6, motor: true, degelo: false }, // Excursão
-    { id: 3, nome: 'ILHA-02', temp: -5.0, temp_max: 0, motor: false, degelo: true }, // Degelo
-  ];
+export default function SensoresScreen({ route }) {
+  const { token, socket } = route?.params || {};
+  const [equipamentos, setEquipamentos] = useState([]);
+
+  useEffect(() => {
+    axios.get('http://SEU_IP_LOCAL:3000/api/equipamentos', { headers: { Authorization: `Bearer ${token}` } })
+      .then(res => setEquipamentos(res.data));
+  }, [token]);
+
+  useEffect(() => {
+    if (!socket) return;
+    socket.on('nova_leitura', (leitura) => {
+      setEquipamentos(prev => prev.map(eq => eq.id === leitura.equipamento_id ? { ...eq, ultima_temp: leitura.temperatura, ultima_umidade: leitura.umidade } : eq));
+    });
+    return () => socket.off('nova_leitura');
+  }, [socket]);
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Activity size={24} color={theme.info} />
-        <View style={{ marginLeft: 12 }}>
-          <Text style={styles.title}>Monitorização Live</Text>
-          <Text style={styles.subtitle}>Telemetria Térmica em Tempo Real</Text>
-        </View>
-      </View>
-
-      <ScrollView contentContainerStyle={styles.grid}>
-        {sensores.map(s => {
-          const isDanger = s.temp > s.temp_max;
-          let statusColor = theme.success; let StatusIcon = Zap; let statusText = 'Operacional';
-          
-          if (s.degelo) { statusColor = theme.info; StatusIcon = Snowflake; statusText = 'Em Degelo'; }
-          else if (isDanger) { statusColor = theme.danger; StatusIcon = AlertTriangle; statusText = 'Excursão Térmica'; }
-
-          return (
-            <View key={s.id} style={[styles.card, isDanger && styles.cardDanger]}>
-              <View style={styles.cardTop}>
-                <Text style={styles.equipName}>{s.nome}</Text>
-                <View style={[styles.statusBadge, { backgroundColor: `${statusColor}20` }]}>
-                  <StatusIcon size={12} color={statusColor} />
-                  <Text style={[styles.statusText, { color: statusColor }]}>{statusText}</Text>
-                </View>
+    <View style={styles.container}>
+      <Text style={styles.pageTitle}>Telemetria IoT Dinâmica</Text>
+      <ScrollView>
+        {equipamentos.map(eq => (
+          <View key={eq.id} style={styles.card}>
+            <Text style={styles.eqName}>{eq.nome}</Text>
+            <Text style={styles.eqSetor}>{eq.setor}</Text>
+            
+            <View style={styles.leiturasRow}>
+              <View style={styles.leituraBox}>
+                <Thermometer size={24} color={theme.primary} />
+                <Text style={styles.leituraValor}>{eq.ultima_temp != null ? `${parseFloat(eq.ultima_temp).toFixed(1)}°` : '--'}</Text>
+                <Text style={styles.leituraLabel}>Temperatura</Text>
+              </View>
+              
+              <View style={styles.leituraBox}>
+                <Droplets size={24} color={theme.info} />
+                <Text style={styles.leituraValor}>{eq.ultima_umidade != null ? `${parseFloat(eq.ultima_umidade).toFixed(0)}%` : '--'}</Text>
+                <Text style={styles.leituraLabel}>Umidade</Text>
               </View>
 
-              <View style={styles.telemetryBox}>
-                <View style={styles.reading}>
-                  <Thermometer size={16} color={isDanger ? theme.danger : theme.textMuted} />
-                  <Text style={[styles.readingVal, isDanger && { color: theme.danger }]}>{s.temp}°C</Text>
+              {eq.em_degelo === 1 && (
+                <View style={styles.degeloBox}>
+                  <Snowflake size={20} color="#ffffff" />
+                  <Text style={{color: 'white', fontSize: 10, fontWeight: 'bold', marginTop: 4}}>DEGELO</Text>
                 </View>
-                <Text style={styles.limitText}>SLA Máx: {s.temp_max}°C</Text>
-              </View>
+              )}
             </View>
-          );
-        })}
+          </View>
+        ))}
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: theme.bg },
-  header: { flexDirection: 'row', alignItems: 'center', padding: 15, backgroundColor: theme.card, borderBottomWidth: 1, borderBottomColor: theme.border },
-  title: { color: theme.textMain, fontSize: 20, fontWeight: '900' },
-  subtitle: { color: theme.textMuted, fontSize: 12, fontWeight: '600' },
-  grid: { padding: 15, gap: 15 },
-  
-  card: { backgroundColor: theme.card, padding: 15, borderRadius: 16, borderWidth: 1, borderColor: theme.border, borderLeftWidth: 4, borderLeftColor: theme.success },
-  cardDanger: { borderLeftColor: theme.danger, backgroundColor: 'rgba(239, 68, 68, 0.05)', borderColor: 'rgba(239, 68, 68, 0.3)' },
-  
-  cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
-  equipName: { color: theme.textMain, fontSize: 18, fontWeight: '800', fontFamily: 'monospace' },
-  statusBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
-  statusText: { fontSize: 10, fontWeight: '800', textTransform: 'uppercase' },
-
-  telemetryBox: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' },
-  reading: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  readingVal: { color: theme.textMain, fontSize: 28, fontWeight: '900', fontFamily: 'monospace' },
-  limitText: { color: theme.textMuted, fontSize: 11, fontWeight: '700', textTransform: 'uppercase' }
+  container: { flex: 1, backgroundColor: theme.bg, padding: 15 },
+  pageTitle: { fontSize: 20, fontWeight: 'bold', color: theme.textMain, marginBottom: 15 },
+  card: { backgroundColor: theme.card, padding: 20, borderRadius: 16, marginBottom: 15, borderWidth: 1, borderColor: theme.border },
+  eqName: { color: theme.textMain, fontSize: 18, fontWeight: '900' },
+  eqSetor: { color: theme.textMuted, fontSize: 12, fontWeight: 'bold', textTransform: 'uppercase', marginBottom: 15 },
+  leiturasRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  leituraBox: { alignItems: 'center', backgroundColor: '#1e293b', padding: 15, borderRadius: 12, flex: 1, marginHorizontal: 5 },
+  leituraValor: { color: theme.textMain, fontSize: 22, fontWeight: '900', marginTop: 8, fontFamily: 'monospace' },
+  leituraLabel: { color: theme.textMuted, fontSize: 10, textTransform: 'uppercase', fontWeight: 'bold', marginTop: 4 },
+  degeloBox: { backgroundColor: theme.info, padding: 10, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginLeft: 5 }
 });
