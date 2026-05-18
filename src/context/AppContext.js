@@ -6,8 +6,8 @@ import { io } from 'socket.io-client';
 export const AppContext = createContext();
 
 // 🔴 AVISO: MANTÉM AQUI O TEU IP DA REDE LOCAL
-const API_URL = 'http://192.168.200.27:3000/api'; 
-const SOCKET_URL = 'http://192.168.200.27:3000';
+const API_URL = 'http://192.168.56.1:3000/api'; 
+const SOCKET_URL = 'http://192.168.56.1:3000';
 
 export const AppProvider = ({ children }) => {
   const [token, setToken] = useState(null);
