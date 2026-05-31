@@ -13,59 +13,52 @@ import {
 import { AppContext } from '../context/AppContext';
 
 export default function LoginScreen() {
-  // Puxando o contexto global da aplicação
   const contexto = useContext(AppContext);
 
-  // Fallback visual se o contexto ainda estiver carregando
-  if (!contexto) return null;
+  // Prevenção de Crash: Aguarda que o Provider injete os dados
+  if (!contexto) {
+    return (
+      <View style={{ flex: 1, backgroundColor: '#0f172a', justifyContent: 'center', alignItems: 'center' }}>
+        <Text style={{ color: '#fff' }}>A inicializar módulos de segurança...</Text>
+      </View>
+    );
+  }
 
-  const { 
-    setToken, setUserId, setUserRole, setUserFilial, 
-    setNomeLogado, setPapelLogado, theme 
-  } = contexto;
+  const { setToken, setUserId, setUserRole, setUserFilial, setNomeLogado, setPapelLogado, theme } = contexto;
 
   const [usuario, setUsuario] = useState('');
   const [senha, setSenha] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
   const fazerLogin = async () => {
-    if (!usuario || !senha) {
-      return Alert.alert('Atenção', 'Por favor, preencha todos os campos.');
-    }
-    
+    if (!usuario || !senha) return Alert.alert('Atenção', 'Por favor, preencha todos os campos.');
     setIsLoading(true);
 
-    // Utilizando o seu IP local configurado no AppContext
+    // O IP da sua máquina que está no AppContext.js
     const API_URL = 'http://192.168.56.1:3000/api';
     
     try {
       const res = await axios.post(`${API_URL}/login`, { usuario, senha });
-      
       const { token, id, role, filial, nome_tecnico, nome_gerente, nome_coordenador } = res.data;
       
-      // Definição da identidade baseada na resposta da API
       let nomeIdentity = usuario;
-      let papelIdentity = 'Equipe Geral';
+      let papelIdentity = 'Equipa Geral';
 
       if (role === 'DEV') { nomeIdentity = 'Desenvolvedor'; papelIdentity = 'SysAdmin / Root'; }
       else if (role === 'ADMIN') { nomeIdentity = 'Administrador'; papelIdentity = 'Acesso Master'; }
       else if (role === 'MANUTENCAO') { nomeIdentity = nome_tecnico || 'Técnico'; papelIdentity = 'Manutenção Global'; }
       else if (role === 'LOJA') { 
-        if (nome_gerente) { nomeIdentity = nome_gerente; papelIdentity = 'Gerente da Loja'; }
+        if (nome_gerente) { nomeIdentity = nome_gerente; papelIdentity = 'Gerente de Loja'; }
         else if (nome_coordenador) { nomeIdentity = nome_coordenador; papelIdentity = 'Coordenador'; }
       }
 
-      // 1. Salvar localmente para manter a sessão ao reiniciar o App (Persistência)
+      // Persistir Sessão no Telemóvel
       await AsyncStorage.multiSet([
-        ['token', token],
-        ['userId', String(id)],
-        ['userRole', role],
-        ['userFilial', filial || 'Todas'],
-        ['nomeLogado', nomeIdentity],
-        ['papelLogado', papelIdentity]
+        ['token', token], ['userId', String(id)], ['userRole', role],
+        ['userFilial', filial || 'Todas'], ['nomeLogado', nomeIdentity], ['papelLogado', papelIdentity]
       ]);
 
-      // 2. Atualizar o estado global (Isto fará o RootNavigator mudar para o DrawerNavigator imediatamente)
+      // Acionar Contexto (O RootNavigator vai redirecionar automaticamente para a App)
       setUserId(String(id));
       setUserRole(role);
       setUserFilial(filial || 'Todas');
@@ -74,9 +67,8 @@ export default function LoginScreen() {
       setToken(token); 
 
     } catch (e) {
-      console.log('Erro de login:', e);
       if (!e.response) {
-         Alert.alert('Falha de Rede', 'Não foi possível conectar ao servidor (192.168.200.27). Verifique se o backend (Node.js) está online.');
+         Alert.alert('Falha de Rede', 'Não foi possível ligar ao servidor Node.js (192.168.200.27). Verifique se o backend está ligado.');
       } else {
          Alert.alert('Acesso Negado', 'Credenciais inválidas ou conta suspensa.');
       }
@@ -93,7 +85,7 @@ export default function LoginScreen() {
         <View style={styles.logoContainer}>
           <ShieldCheck size={72} color={theme?.primary || '#10b981'} />
           <Text style={[styles.title, { color: theme?.textMain || '#f8fafc' }]}>TermoSync NOC</Text>
-          <Text style={[styles.subtitle, { color: theme?.textMuted || '#94a3b8' }]}>Acesso Mobile Tático</Text>
+          <Text style={[styles.subtitle, { color: theme?.textMuted || '#94a3b8' }]}>Acesso Tático Mobile</Text>
         </View>
 
         <View style={[styles.formContainer, { backgroundColor: theme?.card || '#1e293b', borderColor: theme?.border || '#334155' }]}>
@@ -101,12 +93,9 @@ export default function LoginScreen() {
             <User size={20} color={theme?.textMuted || '#94a3b8'} style={styles.inputIcon} />
             <TextInput 
               style={[styles.input, { color: theme?.textMain || '#f8fafc' }]} 
-              placeholder="Nome de Usuário" 
+              placeholder="Nome de Utilizador" 
               placeholderTextColor={theme?.textMuted || '#94a3b8'}
-              value={usuario} 
-              onChangeText={setUsuario} 
-              autoCapitalize="none"
-              autoCorrect={false}
+              value={usuario} onChangeText={setUsuario} autoCapitalize="none" autoCorrect={false}
             />
           </View>
 
@@ -114,23 +103,16 @@ export default function LoginScreen() {
             <Lock size={20} color={theme?.textMuted || '#94a3b8'} style={styles.inputIcon} />
             <TextInput 
               style={[styles.input, { color: theme?.textMain || '#f8fafc' }]} 
-              placeholder="Senha de Acesso" 
+              placeholder="Palavra-passe de Acesso" 
               placeholderTextColor={theme?.textMuted || '#94a3b8'}
-              value={senha} 
-              onChangeText={setSenha} 
-              secureTextEntry
+              value={senha} onChangeText={setSenha} secureTextEntry
             />
           </View>
 
-          <TouchableOpacity 
-            style={[styles.btnPrimary, { backgroundColor: theme?.primary || '#10b981' }]} 
-            onPress={fazerLogin} 
-            disabled={isLoading}
-          >
-            <Text style={styles.btnPrimaryText}>{isLoading ? 'VERIFICANDO...' : 'AUTENTICAR'}</Text>
+          <TouchableOpacity style={[styles.btnPrimary, { backgroundColor: theme?.primary || '#10b981' }]} onPress={fazerLogin} disabled={isLoading}>
+            <Text style={styles.btnPrimaryText}>{isLoading ? 'A VERIFICAR...' : 'AUTENTICAR'}</Text>
           </TouchableOpacity>
         </View>
-
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
