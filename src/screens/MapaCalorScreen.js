@@ -1,100 +1,94 @@
-import axios from 'axios';
-import { Activity, AlertTriangle, Map, Snowflake, Thermometer } from 'lucide-react-native';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Map, RefreshCw } from 'lucide-react-native';
+import { useEffect, useState } from 'react';
+import { SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-const theme = { bg: '#020617', card: '#0f172a', textMain: '#f8fafc', textMuted: '#94a3b8', border: '#1e293b', primary: '#059669', success: '#10b981', danger: '#ef4444', warning: '#f59e0b', info: '#38bdf8' };
+export default function MapaCalorScreen() {
+  const [heatmap, setHeatmap] = useState([]);
 
-export default function MapaCalorScreen({ route }) {
-  const { token } = route?.params || {};
-  const [equipamentos, setEquipamentos] = useState([]);
-  const [notificacoes, setNotificacoes] = useState([]);
-  const [refreshing, setRefreshing] = useState(false);
+  // Gera uma grelha 8x12 para simular o mapa da loja no telemóvel
+  useEffect(() => {
+    const generateHeatmap = () => {
+      const grid = [];
+      for (let i = 0; i < 96; i++) {
+        // Gera valores de 0 a 4 (0: Normal, 4: Quente/Alerta)
+        const val = Math.random() > 0.8 ? Math.floor(Math.random() * 4) + 1 : 0;
+        grid.push(val);
+      }
+      setHeatmap(grid);
+    };
 
-  const carregarDados = useCallback(async () => {
-    try {
-      const [resEquip, resNotif] = await Promise.all([
-        axios.get('http://SEU_IP_LOCAL:3000/api/equipamentos', { headers: { Authorization: `Bearer ${token}` } }),
-        axios.get('http://SEU_IP_LOCAL:3000/api/notificacoes', { headers: { Authorization: `Bearer ${token}` } })
-      ]);
-      setEquipamentos(resEquip.data);
-      setNotificacoes(resNotif.data);
-    } catch (e) { console.log(e); }
-  }, [token]);
+    generateHeatmap();
+    const interval = setInterval(generateHeatmap, 5000);
+    return () => clearInterval(interval);
+  }, []);
 
-  useEffect(() => { carregarDados(); }, [carregarDados]);
-
-  const statusMapa = useMemo(() => {
-    return equipamentos.map(eq => {
-      const temAlerta = notificacoes.find(n => n.equipamento_id === eq.id && !n.resolvido);
-      let statusColor = theme.success;
-      let statusText = 'ZONA ESTÁVEL';
-      let Icon = Activity;
-      
-      if (temAlerta) { statusColor = theme.danger; statusText = 'FOCO CRÍTICO'; Icon = AlertTriangle; }
-      else if (eq.em_degelo) { statusColor = theme.info; statusText = 'CICLO DE DEGELO'; Icon = Snowflake; }
-      else if (!eq.motor_ligado) { statusColor = theme.warning; statusText = 'COMPRESSOR PARADO'; }
-
-      return { ...eq, statusColor, statusText, temAlerta, Icon };
-    });
-  }, [equipamentos, notificacoes]);
+  const getCellColor = (val) => {
+    switch(val) {
+      case 1: return 'rgba(56, 189, 248, 0.4)'; // Frio
+      case 2: return 'rgba(245, 158, 11, 0.4)'; // Morno
+      case 3: return 'rgba(239, 68, 68, 0.6)';  // Quente
+      case 4: return '#ef4444'; // Alerta Máximo
+      default: return '#0f172a'; // Fundo Normal
+    }
+  };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Map size={24} color={theme.primary} />
-        <View style={{ marginLeft: 10 }}>
-          <Text style={styles.title}>Planta Digital (Heatmap)</Text>
-          <Text style={styles.subtitle}>Mapeamento térmico em tempo real</Text>
+    <SafeAreaView style={styles.container}>
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        
+        <View style={styles.headerCard}>
+          <Map size={28} color="#10b981" />
+          <View style={{ marginLeft: 12, flex: 1 }}>
+            <Text style={styles.headerTitle}>PLANTA DIGITAL</Text>
+            <Text style={styles.headerSubtitle}>Mapeamento Térmico (Heatmap)</Text>
+          </View>
+          <RefreshCw size={20} color="#64748b" />
         </View>
-      </View>
 
-      <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await carregarDados(); setRefreshing(false); }} tintColor={theme.primary} />}>
-        <View style={styles.grid}>
-          {statusMapa.map(eq => (
-            <View key={eq.id} style={[styles.card, { borderColor: eq.statusColor, backgroundColor: `${eq.statusColor}10` }]}>
-              <View style={styles.cardTop}>
-                <View>
-                  <Text style={styles.eqName}>{eq.nome}</Text>
-                  <Text style={styles.eqSetor}>{eq.setor || 'Geral'}</Text>
-                </View>
-                <eq.Icon size={24} color={eq.statusColor} />
-              </View>
-
-              <View style={styles.leituras}>
-                <Text style={[styles.tempPrincipal, { color: eq.statusColor }]}>
-                  {eq.ultima_temp != null ? `${parseFloat(eq.ultima_temp).toFixed(1)}°` : '--'}
-                </Text>
-                <View style={styles.leituraSecundaria}>
-                  <Text style={styles.umidade}><Thermometer size={12} color={theme.textMuted}/> [{eq.temp_min} a {eq.temp_max}°]</Text>
-                </View>
-              </View>
-
-              <View style={[styles.badge, { backgroundColor: `${eq.statusColor}20` }]}>
-                <Text style={[styles.badgeText, { color: eq.statusColor }]}>{eq.statusText}</Text>
-              </View>
-            </View>
-          ))}
+        <View style={styles.heatmapWrapper}>
+          <View style={styles.gridContainer}>
+            {heatmap.map((val, idx) => (
+              <View 
+                key={idx} 
+                style={[
+                  styles.heatCell, 
+                  { backgroundColor: getCellColor(val) },
+                  val === 4 && styles.heatCellAlert
+                ]} 
+              />
+            ))}
+          </View>
         </View>
+
+        <View style={styles.legendBox}>
+          <Text style={styles.legendTitle}>LEGENDA TÉRMICA</Text>
+          <View style={styles.legendRow}>
+            <View style={[styles.legendDot, { backgroundColor: '#0f172a' }]} /><Text style={styles.legendText}>OTIMIZADO</Text>
+            <View style={[styles.legendDot, { backgroundColor: 'rgba(56, 189, 248, 0.6)' }]} /><Text style={styles.legendText}>FRIO (RESFRIADO)</Text>
+            <View style={[styles.legendDot, { backgroundColor: '#ef4444' }]} /><Text style={styles.legendText}>ALERTA TÉRMICO</Text>
+          </View>
+        </View>
+
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: theme.bg, padding: 15 },
-  header: { flexDirection: 'row', alignItems: 'center', marginBottom: 20, backgroundColor: theme.card, padding: 15, borderRadius: 12, borderWidth: 1, borderColor: theme.border },
-  title: { color: theme.textMain, fontSize: 18, fontWeight: 'bold' },
-  subtitle: { color: theme.textMuted, fontSize: 12 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', paddingBottom: 20 },
-  card: { width: '48%', padding: 15, borderRadius: 16, borderWidth: 2, marginBottom: 15 },
-  cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 },
-  eqName: { color: theme.textMain, fontSize: 14, fontWeight: '900' },
-  eqSetor: { color: theme.textMuted, fontSize: 10, fontWeight: 'bold', textTransform: 'uppercase' },
-  leituras: { flexDirection: 'row', alignItems: 'baseline', gap: 8, marginBottom: 10 },
-  tempPrincipal: { fontSize: 24, fontWeight: '900' },
-  leituraSecundaria: { flexDirection: 'column' },
-  umidade: { color: theme.textMuted, fontSize: 10, fontWeight: 'bold' },
-  badge: { alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10 },
-  badgeText: { fontSize: 9, fontWeight: 'bold' }
+  container: { flex: 1, backgroundColor: '#020617' },
+  scrollContent: { padding: 16 },
+  headerCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#0b1120', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#1e293b', marginBottom: 20 },
+  headerTitle: { fontSize: 16, fontWeight: '900', color: '#fff', letterSpacing: 0.5 },
+  headerSubtitle: { fontSize: 11, color: '#94a3b8', fontWeight: 'bold' },
+
+  heatmapWrapper: { backgroundColor: '#0b1120', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#1e293b', marginBottom: 20 },
+  gridContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, justifyContent: 'center' },
+  heatCell: { width: '11%', aspectRatio: 1, borderRadius: 4, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
+  heatCellAlert: { shadowColor: '#ef4444', shadowOffset: {width:0,height:0}, shadowOpacity: 0.8, shadowRadius: 8, elevation: 5, borderColor: '#ef4444' },
+
+  legendBox: { backgroundColor: '#020617', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#1e293b', borderStyle: 'dashed' },
+  legendTitle: { color: '#64748b', fontSize: 10, fontWeight: '900', marginBottom: 12, letterSpacing: 1 },
+  legendRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  legendDot: { width: 12, height: 12, borderRadius: 2, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+  legendText: { color: '#cbd5e1', fontSize: 10, fontWeight: 'bold', marginRight: 8 }
 });

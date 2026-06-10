@@ -1,25 +1,22 @@
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { useContext } from 'react';
-import { AppContext } from '../context/AppContext';
 
-// Ecrãs e Navegadores
+// Importação das Telas
 import LoginScreen from '../screens/LoginScreen';
 import DrawerNavigator from './DrawerNavigator';
 
 const Stack = createNativeStackNavigator();
 
 export default function RootNavigator() {
-  const { token } = useContext(AppContext);
-
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
-      {token ? (
-        // Se o utilizador tem sessão iniciada, carrega a App (Menu Lateral)
-        <Stack.Screen name="App" component={DrawerNavigator} />
-      ) : (
-        // Se não tem sessão, carrega apenas o ecrã de Login
-        <Stack.Screen name="Login" component={LoginScreen} />
-      )}
+    <Stack.Navigator 
+      initialRouteName="Login"
+      screenOptions={{ 
+        headerShown: false, // Esconde o cabeçalho padrão para mantermos o nosso design Cyber
+        animation: 'fade'   // Animação suave ao fazer login
+      }}
+    >
+      <Stack.Screen name="Login" component={LoginScreen} />
+      <Stack.Screen name="Drawer" component={DrawerNavigator} />
     </Stack.Navigator>
   );
 }

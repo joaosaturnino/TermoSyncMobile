@@ -1,132 +1,282 @@
-import * as Print from 'expo-print';
-import * as Sharing from 'expo-sharing';
-import { Activity, Building2, Cpu, DollarSign, FileText, PieChart, Server, ShieldCheck } from 'lucide-react-native';
-import { useState } from 'react';
-import { Alert, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import {
+  Cpu,
+  Globe, HardDrive, Radio,
+  ShieldCheck,
+  TerminalSquare
+} from 'lucide-react-native';
+import { useEffect, useRef, useState } from 'react';
+import {
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View
+} from 'react-native';
 
-export default function PainelDesenvolvedor({ api, abaAtiva, isDevAuthenticated, showToast, sysConfig, filiaisDb }) {
-  
-  // Apenas renderiza se a aba ativa for a de BI
-  if (abaAtiva !== 'dev_panel' && abaAtiva !== 'bi') {
-    return null;
-  }
+// ============================================================================
+// ECRÃ DE BOOT (HACKER SCREEN MOBILE)
+// ============================================================================
+const BootScreen = ({ onComplete }) => {
+  const [logs, setLogs] = useState([]);
+  const [showInput, setShowInput] = useState(false);
+  const [passcode, setPasscode] = useState('');
+  const [isProcessing, setIsProcessing] = useState(false);
+  const scrollRef = useRef();
 
-  const [isCompiling, setIsCompiling] = useState(false);
-
-  const gerarRelatorioPDF = async (tipo, tema, cor) => {
-    setIsCompiling(true);
-    // Usando Alert nativo caso a prop showToast não seja passada
-    Alert.alert('Gerando', `Buscando matriz de dados reais para: ${tipo}...`);
+  useEffect(() => {
+    let isMounted = true;
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
     
-    try {
-      let colunasHtml = `<th>Métrica</th><th>Valor</th><th>Módulo</th>`;
-      let linhasHtml = `<tr><td>Estrutura Base</td><td>Operando sob conformidade</td><td>SaaS Core</td></tr>`;
+    const runBootSequence = async () => {
+      const sequence = [
+        { text: "TermoSync Mobile OS [Build 10.5.22621]", color: '#94a3b8' },
+        { text: "Inicializando Processadores... OK", delay: 300 },
+        { text: "Escaneando rede por dispositivos edge...", delay: 400 },
+        { text: "[ OK ] Watchdogs de hardware acionados.", delay: 200 },
+        { text: "Uplink WSS seguro para cluster master... [ 104.28.192.12 ]", delay: 400 },
+        { text: "[ OK ] Túnel TLS 1.3 encriptado.", delay: 150, color: '#10b981' },
+        { text: "[ AVISO ] IDS INICIANDO ZERO-TRUST.", delay: 500, color: '#ef4444' },
+        { text: "SISTEMA RESTRITO. IDENTIFICAÇÃO ROOT NECESSÁRIA.", delay: 200, color: '#cbd5e1' }
+      ];
 
-      // Estrutura HTML do PDF
-      const htmlContent = `
-        <html>
-          <head>
-            <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-            <style>
-              body { font-family: 'Helvetica', sans-serif; background-color: #0f172a; color: #cbd5e1; padding: 20px; }
-              .header { background-color: ${cor}; color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
-              h1 { margin: 0; font-size: 20px; }
-              h2 { margin: 5px 0 0 0; font-size: 14px; opacity: 0.8; }
-              table { width: 100%; border-collapse: collapse; margin-top: 20px; background-color: #1e293b; border-radius: 8px; overflow: hidden; }
-              th, td { padding: 12px; text-align: left; border-bottom: 1px solid #334155; font-size: 12px; }
-              th { background-color: rgba(0,0,0,0.2); color: white; text-transform: uppercase; font-weight: bold; }
-              tr:hover { background-color: rgba(255,255,255,0.02); }
-            </style>
-          </head>
-          <body>
-            <div class="header">
-              <h1>TERMOSYNC ENTERPRISE — RELATÓRIO EXECUTIVO</h1>
-              <h2>${tema}</h2>
-            </div>
-            <p>Emitido em: ${new Date().toLocaleString()} | Classificação: CONFIDENCIAL / USO INTERNO</p>
-            <table>
-              <thead><tr>${colunasHtml}</tr></thead>
-              <tbody>${linhasHtml}</tbody>
-            </table>
-          </body>
-        </html>
-      `;
-
-      // Gera o PDF e abre a tela de compartilhamento nativa (WhatsApp, Email, etc)
-      const { uri } = await Print.printToFileAsync({ html: htmlContent });
-      if (Platform.OS !== 'web') {
-        await Sharing.shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf' });
+      for (let i = 0; i < sequence.length; i++) {
+        if (!isMounted) return;
+        await sleep(sequence[i].delay || 100);
+        setLogs(prev => [...prev, sequence[i]]);
       }
-    } catch (err) {
-      Alert.alert('Erro Crítico', 'Falha na compilação analítica.');
-      console.error(err);
-    } finally {
-      setIsCompiling(false);
+      if (isMounted) setShowInput(true);
+    };
+
+    runBootSequence();
+    return () => { isMounted = false; };
+  }, []);
+
+  const handleAuth = async () => {
+    if (!passcode.trim() || isProcessing) return;
+    setIsProcessing(true);
+    setShowInput(false);
+    
+    const typed = passcode;
+    setPasscode('');
+    setLogs(prev => [...prev, { text: `root@mobile:~$ ${typed.replace(/./g, '*')}`, color: '#10b981' }]);
+    
+    await new Promise(r => setTimeout(r, 600));
+    
+    if (typed.toLowerCase() === 'root') {
+      setLogs(prev => [...prev, { text: "[ OK ] AUTENTICAÇÃO BEM-SUCEDIDA.", color: '#10b981' }]);
+      await new Promise(r => setTimeout(r, 800));
+      onComplete();
+    } else {
+      setLogs(prev => [...prev, { text: "[ FALHA ] ACESSO NEGADO.", color: '#ef4444' }]);
+      await new Promise(r => setTimeout(r, 500));
+      setShowInput(true);
+      setIsProcessing(false);
     }
   };
 
-  const modulosBI = [
-    { id: 'FINOPS_BILLING', titulo: 'Core Financeiro (RevOps)', desc: 'Relação completa de faturamento, inadimplência e MRR por organização jurídica.', icon: DollarSign, color: '#10b981' },
-    { id: 'AUDITORIA_SOC', titulo: 'Auditoria e Zero-Trust (SOC)', desc: 'Extrato imutável de transações críticas de login, purgas e revogações.', icon: ShieldCheck, color: '#a855f7' },
-    { id: 'EDGE_HARDWARE', titulo: 'Inventário Edge Computing', desc: 'Mapeamento massivo da frota de microcontroladores.', icon: Server, color: '#38bdf8' },
-    { id: 'CAOS_RESILIENCIA', titulo: 'Auditoria de Resiliência', desc: 'Análise de payloads injetados e tempo de resposta.', icon: Cpu, color: '#ef4444' },
-    { id: 'ORGANIZACOES_TENANTS', titulo: 'Ecossistema de Organizações', desc: 'Lista unificada de tenants corporativos provisionados ativos na nuvem.', icon: Building2, color: '#f59e0b' },
-    { id: 'SYSOPS_HEALTH', titulo: 'Saúde da Plataforma (SysOps)', desc: 'Logs vitais de conexões WebSockets abertas e volumetria.', icon: Activity, color: '#6366f1' }
-  ];
+  return (
+    <SafeAreaView style={styles.bootContainer}>
+      <ScrollView ref={scrollRef} onContentSizeChange={() => scrollRef.current?.scrollToEnd()} style={styles.bootTerminal}>
+        {logs.map((log, index) => (
+          <Text key={index} style={[styles.bootLog, { color: log.color || '#cbd5e1' }]}>
+            {log.text}
+          </Text>
+        ))}
+        {showInput && (
+          <View style={styles.bootInputRow}>
+            <Text style={styles.bootPrompt}>root@mobile:~$</Text>
+            <TextInput 
+              style={styles.bootInput} 
+              autoFocus 
+              secureTextEntry 
+              value={passcode} 
+              onChangeText={setPasscode} 
+              onSubmitEditing={handleAuth}
+              keyboardType="default"
+              autoCapitalize="none"
+              blurOnSubmit={false}
+            />
+          </View>
+        )}
+      </ScrollView>
+    </SafeAreaView>
+  );
+};
+
+// ============================================================================
+// PAINEL NOC PRINCIPAL (MOBILE)
+// ============================================================================
+export default function PainelDesenvolvedor({ route }) {
+  const [isAuth, setIsAuth] = useState(false);
+  const [metrics, setMetrics] = useState({ cpu: 12, ram: 42, ping: 14, reqs: 342, dbQps: 154, bandwidth: 24.5 });
+  const [uptimeStr, setUptimeStr] = useState('--:--:--');
+  const [apiTraffic, setApiTraffic] = useState([]);
+  const [threats, setThreats] = useState([]);
+
+  // Simulador de Uptime Mobile
+  useEffect(() => {
+    if (!isAuth) return;
+    const start = Date.now() - 3600000 * 24 * 3; // 3 dias mockados
+    const iUptime = setInterval(() => {
+      const diff = Math.floor((Date.now() - start) / 1000);
+      const d = Math.floor(diff / 86400);
+      const h = String(Math.floor((diff % 86400) / 3600)).padStart(2, '0');
+      const m = String(Math.floor((diff % 3600) / 60)).padStart(2, '0');
+      const s = String(diff % 60).padStart(2, '0');
+      setUptimeStr(`${d}d ${h}:${m}:${s}`);
+    }, 1000);
+    return () => clearInterval(iUptime);
+  }, [isAuth]);
+
+  // Motores de Simulação NOC
+  useEffect(() => {
+    if (!isAuth) return;
+    const i1 = setInterval(() => {
+      setMetrics({
+        cpu: Math.floor(Math.random() * 20) + 15,
+        ram: Math.floor(Math.random() * 10) + 60,
+        ping: Math.floor(Math.random() * 8) + 10,
+        reqs: Math.floor(Math.random() * 150) + 400,
+        dbQps: Math.floor(Math.random() * 50) + 100,
+        bandwidth: (Math.random() * 10 + 15).toFixed(1)
+      });
+    }, 2000);
+
+    const i2 = setInterval(() => {
+      const methods = ['GET', 'POST', 'WSS'];
+      const m = methods[Math.floor(Math.random() * methods.length)];
+      setApiTraffic(prev => [...prev.slice(-15), { id: Date.now(), method: m, ms: Math.floor(Math.random() * 40)+5, route: `/api/v1/data/${Math.floor(Math.random()*10)}` }]);
+    }, 800);
+
+    const i3 = setInterval(() => {
+      if (Math.random() > 0.7) {
+        setThreats(prev => [...prev.slice(-10), { id: Date.now(), text: `[WAF BLOCK] SQL_INJECTION from 104.28.${Math.floor(Math.random()*255)}.x` }]);
+      }
+    }, 3000);
+
+    return () => { clearInterval(i1); clearInterval(i2); clearInterval(i3); };
+  }, [isAuth]);
+
+  if (!isAuth) {
+    return <BootScreen onComplete={() => setIsAuth(true)} />;
+  }
 
   return (
-    <View style={styles.container}>
-      <View style={styles.cardHeader}>
-        <PieChart size={24} color="#10b981" />
-        <View style={styles.headerTextContainer}>
-          <Text style={styles.cardTitle}>Centro de Inteligência & Analytics</Text>
-          <Text style={styles.cardSubtitle}>Módulo Executivo Móvel de Extração Direta</Text>
+    <SafeAreaView style={styles.container}>
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>CYBER COMMAND NOC</Text>
+          <Text style={styles.headerSubtitle}>Monitoramento Global Multi-Tenant</Text>
         </View>
-      </View>
 
-      <View style={styles.grid}>
-        {modulosBI.map(mod => (
-          <View key={mod.id} style={[styles.biCard, { borderTopColor: mod.color }]}>
-            <View style={styles.biHeader}>
-              <View style={[styles.iconWrapper, { backgroundColor: `${mod.color}20` }]}>
-                <mod.icon size={22} color={mod.color} />
-              </View>
-              <View style={styles.biTextContainer}>
-                <Text style={styles.biTitle}>{mod.titulo}</Text>
-                <Text style={styles.biDesc}>{mod.desc}</Text>
-              </View>
-            </View>
-            <View style={styles.biActions}>
-              <TouchableOpacity 
-                style={[styles.btnBi, { backgroundColor: mod.color }]} 
-                onPress={() => gerarRelatorioPDF(mod.id, mod.titulo, mod.color)}
-                disabled={isCompiling}
-              >
-                <FileText size={14} color="#ffffff" />
-                <Text style={styles.btnBiText}>Gerar PDF Real</Text>
-              </TouchableOpacity>
-            </View>
+        {/* HUD HORIZONTAL SCROLL */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hudRow}>
+          <View style={styles.hudCard}>
+            <View style={styles.hudHeader}><Cpu size={14} color="#10b981"/><Text style={styles.hudTitle}>CPU LOAD</Text></View>
+            <Text style={styles.hudValue}>{metrics.cpu}<Text style={styles.hudUnit}>%</Text></Text>
           </View>
-        ))}
-      </View>
-    </View>
+          <View style={styles.hudCard}>
+            <View style={styles.hudHeader}><HardDrive size={14} color="#f59e0b"/><Text style={styles.hudTitle}>RAM USAGE</Text></View>
+            <Text style={styles.hudValue}>{metrics.ram}<Text style={styles.hudUnit}>%</Text></Text>
+          </View>
+          <View style={styles.hudCard}>
+            <View style={styles.hudHeader}><Globe size={14} color="#38bdf8"/><Text style={styles.hudTitle}>BANDWIDTH</Text></View>
+            <Text style={styles.hudValue}>{metrics.bandwidth}<Text style={styles.hudUnit}>Mb/s</Text></Text>
+          </View>
+          <View style={styles.hudCard}>
+            <View style={styles.hudHeader}><Radio size={14} color="#ef4444"/><Text style={styles.hudTitle}>NODE.JS UPTIME</Text></View>
+            <Text style={[styles.hudValue, {color: '#ef4444'}]}>{uptimeStr}</Text>
+          </View>
+        </ScrollView>
+
+        {/* TERMINAL: INGRESS ROUTING */}
+        <View style={styles.terminalBox}>
+          <View style={styles.terminalHeader}>
+            <TerminalSquare size={14} color="#38bdf8" />
+            <Text style={styles.terminalTitle}>BASH - INGRESS ROUTING (LIVE)</Text>
+          </View>
+          <View style={styles.terminalBody}>
+            {apiTraffic.map(t => (
+              <View key={t.id} style={styles.terminalLine}>
+                <Text style={styles.tagMethod}>{t.method}</Text>
+                <Text style={styles.tagMs}>{t.ms}ms</Text>
+                <Text style={styles.tagRoute} numberOfLines={1}>{t.route}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+
+        {/* TERMINAL: WAF SECURITY */}
+        <View style={[styles.terminalBox, { borderColor: 'rgba(239,68,68,0.3)' }]}>
+          <View style={[styles.terminalHeader, { borderBottomColor: 'rgba(239,68,68,0.3)' }]}>
+            <ShieldX size={14} color="#ef4444" />
+            <Text style={[styles.terminalTitle, { color: '#ef4444' }]}>WAF / IDS SECURITY LOGS</Text>
+          </View>
+          <View style={styles.terminalBody}>
+            {threats.map(t => (
+              <Text key={t.id} style={styles.tagError}>✖ {t.text}</Text>
+            ))}
+          </View>
+        </View>
+
+        {/* SWITCHBOARD (IAM & UI) */}
+        <View style={styles.switchboard}>
+          <Text style={styles.switchboardTitle}><ShieldCheck size={16} color="#10b981"/> CONTROLE DE ACESSO (IAM)</Text>
+          <View style={styles.switchRow}>
+            <Text style={styles.switchLabel}>PERMISSÃO GLOBAL</Text>
+            <ToggleRight size={28} color="#10b981" />
+          </View>
+          <View style={styles.switchRow}>
+            <Text style={styles.switchLabel}>MODO MANUTENÇÃO (LOCKDOWN)</Text>
+            <ToggleLeft size={28} color="#64748b" />
+          </View>
+          <View style={styles.switchRow}>
+            <Text style={styles.switchLabel}>GEOFENCING IP</Text>
+            <ToggleRight size={28} color="#10b981" />
+          </View>
+        </View>
+
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { marginTop: 10 },
-  cardHeader: { flexDirection: 'row', alignItems: 'center', padding: 16, backgroundColor: '#1e293b', borderRadius: 12, marginBottom: 16, borderWidth: 1, borderColor: '#334155' },
-  headerTextContainer: { marginLeft: 12, flex: 1 },
-  cardTitle: { fontSize: 16, fontWeight: '900', color: '#ffffff' },
-  cardSubtitle: { fontSize: 11, color: '#94a3b8', marginTop: 2 },
-  grid: { flexDirection: 'column', gap: 16 },
-  biCard: { backgroundColor: '#1e293b', borderRadius: 12, padding: 16, borderTopWidth: 4, borderWidth: 1, borderColor: '#334155' },
-  biHeader: { flexDirection: 'row', alignItems: 'flex-start' },
-  iconWrapper: { padding: 10, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
-  biTextContainer: { marginLeft: 12, flex: 1 },
-  biTitle: { fontSize: 14, fontWeight: '800', color: '#ffffff' },
-  biDesc: { fontSize: 11, color: '#94a3b8', marginTop: 4, lineHeight: 14 },
-  biActions: { marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#334155' },
-  btnBi: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 10, borderRadius: 8 },
-  btnBiText: { color: '#ffffff', fontSize: 12, fontWeight: '800' }
+  bootContainer: { flex: 1, backgroundColor: '#000' },
+  bootTerminal: { flex: 1, padding: 20 },
+  bootLog: { fontFamily: 'monospace', fontSize: 12, marginBottom: 4 },
+  bootInputRow: { flexDirection: 'row', alignItems: 'center', marginTop: 10 },
+  bootPrompt: { color: '#10b981', fontFamily: 'monospace', fontSize: 14, marginRight: 8 },
+  bootInput: { flex: 1, color: '#fff', fontFamily: 'monospace', fontSize: 14 },
+  
+  container: { flex: 1, backgroundColor: '#020617' },
+  scrollContent: { padding: 16, paddingBottom: 40 },
+  
+  header: { marginBottom: 20 },
+  headerTitle: { color: '#fff', fontSize: 20, fontWeight: '900', letterSpacing: 1 },
+  headerSubtitle: { color: '#94a3b8', fontSize: 12, marginTop: 4, fontWeight: '600' },
+  
+  hudRow: { flexDirection: 'row', gap: 12, marginBottom: 24 },
+  hudCard: { backgroundColor: '#0b1120', width: 150, padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#1e293b' },
+  hudHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12 },
+  hudTitle: { color: '#94a3b8', fontSize: 10, fontWeight: 'bold' },
+  hudValue: { color: '#fff', fontSize: 24, fontWeight: '900', fontFamily: 'monospace' },
+  hudUnit: { fontSize: 12, color: '#64748b' },
+
+  terminalBox: { backgroundColor: '#020617', borderRadius: 12, borderWidth: 1, borderColor: '#1e293b', marginBottom: 20, height: 200, overflow: 'hidden' },
+  terminalHeader: { backgroundColor: '#0b1120', padding: 12, borderBottomWidth: 1, borderBottomColor: '#1e293b', flexDirection: 'row', alignItems: 'center', gap: 8 },
+  terminalTitle: { color: '#64748b', fontSize: 10, fontWeight: 'bold', letterSpacing: 1 },
+  terminalBody: { padding: 12, flex: 1 },
+  terminalLine: { flexDirection: 'row', alignItems: 'center', marginBottom: 6, gap: 8 },
+  tagMethod: { backgroundColor: 'rgba(16,185,129,0.1)', color: '#10b981', fontSize: 10, paddingHorizontal: 4, paddingVertical: 2, borderRadius: 4, fontFamily: 'monospace', fontWeight: 'bold' },
+  tagMs: { color: '#64748b', fontSize: 10, fontFamily: 'monospace' },
+  tagRoute: { color: '#cbd5e1', fontSize: 11, flex: 1, fontFamily: 'monospace' },
+  tagError: { color: '#ef4444', fontSize: 11, fontFamily: 'monospace', marginBottom: 6, fontWeight: 'bold' },
+
+  switchboard: { backgroundColor: '#0b1120', borderRadius: 12, borderWidth: 1, borderColor: '#1e293b', padding: 16 },
+  switchboardTitle: { color: '#10b981', fontSize: 12, fontWeight: '900', marginBottom: 16, letterSpacing: 1 },
+  switchRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#020617', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#1e293b', marginBottom: 8 },
+  switchLabel: { color: '#cbd5e1', fontSize: 11, fontWeight: 'bold', letterSpacing: 0.5 }
 });

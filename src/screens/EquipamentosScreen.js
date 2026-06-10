@@ -1,95 +1,198 @@
-import axios from 'axios';
-import { Edit, MapPin, PlusCircle, Server, Thermometer, Trash2 } from 'lucide-react-native';
-import { useCallback, useEffect, useState } from 'react';
-import { Alert, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import {
+  Cpu,
+  MapPin,
+  Power,
+  RefreshCw,
+  Search,
+  Server,
+  TerminalSquare
+} from 'lucide-react-native';
+import { useEffect, useState } from 'react';
+import {
+  ActivityIndicator, Alert, SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
+} from 'react-native';
+import api from '../api/api';
 
-const theme = { bg: '#020617', card: '#0f172a', textMain: '#f8fafc', textMuted: '#94a3b8', border: '#1e293b', primary: '#059669', danger: '#ef4444' };
+export default function EquipamentosScreen() {
+  const [hardware, setHardware] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [busca, setBusca] = useState('');
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-export default function EquipamentosScreen({ route }) {
-  const { token } = route?.params || {};
-  const [equipamentos, setEquipamentos] = useState([]);
-  const [refreshing, setRefreshing] = useState(false);
-
-  const carregarEquipamentos = useCallback(async () => {
+  const carregarHardware = async () => {
+    setIsRefreshing(true);
     try {
-      const res = await axios.get('http://SEU_IP_LOCAL:3000/api/equipamentos', { headers: { Authorization: `Bearer ${token}` } });
-      setEquipamentos(res.data);
-    } catch (e) { Alert.alert('Erro', 'Falha ao carregar a frota IoT.'); }
-  }, [token]);
-
-  useEffect(() => { carregarEquipamentos(); }, [carregarEquipamentos]);
-
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await carregarEquipamentos();
-    setRefreshing(false);
+      const res = await api.get('/hardware');
+      const agora = new Date().getTime();
+      
+      const formatado = res.data.map(eq => {
+        const tempo = eq.ultima_comunicacao ? (agora - new Date(eq.ultima_comunicacao).getTime()) : 999999999;
+        return {
+          ...eq,
+          ip: eq.ip || '0.0.0.0',
+          mac: eq.mac || '00:00:00:00:00:00',
+          signal: eq.signal_dbm || -100,
+          isOffline: tempo > 180000 // 3 minutos sem heartbeat
+        };
+      });
+      setHardware(formatado);
+    } catch (error) {
+      Alert.alert('Erro', 'Falha ao sincronizar com os Edge Nodes.');
+    } finally {
+      setLoading(false);
+      setIsRefreshing(false);
+    }
   };
 
-  const confirmarExclusao = (id, nome) => {
-    Alert.alert('Remover Máquina', `Deseja excluir o equipamento "${nome}" permanentemente?`, [
-      { text: 'Cancelar', style: 'cancel' },
-      { text: 'Excluir', style: 'destructive', onPress: async () => {
-          try {
-            await axios.delete(`http://SEU_IP_LOCAL:3000/api/equipamentos/${id}`, { headers: { Authorization: `Bearer ${token}` } });
-            carregarEquipamentos();
-          } catch (e) { Alert.alert('Erro', 'Falha na exclusão.'); }
-        }
-      }
-    ]);
+  useEffect(() => { carregarHardware(); }, []);
+
+  const nodesFiltrados = hardware.filter(n => 
+    n.nome?.toLowerCase().includes(busca.toLowerCase()) || 
+    n.ip?.includes(busca)
+  );
+
+  const dispararAcao = (acao, nome) => {
+    Alert.alert(`Comando MQTT: ${acao}`, `A instrução foi enviada para o nó ${nome}.`);
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Gestão de Equipamentos</Text>
-        <TouchableOpacity style={styles.btnAdd}>
-          <PlusCircle size={20} color="#ffffff" />
-          <Text style={styles.btnAddText}>Novo Nó IoT</Text>
-        </TouchableOpacity>
-      </View>
-
-      <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />}>
-        {equipamentos.map(eq => (
-          <View key={eq.id} style={styles.card}>
-            <View style={styles.cardTop}>
-              <View style={styles.iconBox}><Server size={20} color={theme.primary} /></View>
-              <View style={styles.infoBox}>
-                <Text style={styles.eqName}>{eq.nome}</Text>
-                <Text style={styles.eqFilial}><MapPin size={12} color={theme.textMuted}/> {eq.filial || 'Matriz'}</Text>
-              </View>
+    <SafeAreaView style={styles.container}>
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        
+        {/* HEADER TÁTICO */}
+        <View style={styles.headerCard}>
+          <View style={styles.headerTitleRow}>
+            <View style={[styles.iconBoxPrimary, { backgroundColor: '#38bdf8' }]}>
+              <Server size={24} color="#0f172a" />
             </View>
-            
-            <View style={styles.specsRow}>
-              <View style={styles.specBadge}><Thermometer size={12} color={theme.textMuted}/> <Text style={styles.specText}>Min: {eq.temp_min}°C</Text></View>
-              <View style={styles.specBadge}><Thermometer size={12} color={theme.textMuted}/> <Text style={styles.specText}>Max: {eq.temp_max}°C</Text></View>
-            </View>
-
-            <View style={styles.actionsRow}>
-              <TouchableOpacity style={[styles.btnAction, { borderColor: theme.primary }]}><Edit size={16} color={theme.primary} /></TouchableOpacity>
-              <TouchableOpacity style={[styles.btnAction, { borderColor: theme.danger }]} onPress={() => confirmarExclusao(eq.id, eq.nome)}><Trash2 size={16} color={theme.danger} /></TouchableOpacity>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.headerTitle}>EDGE COMPUTING</Text>
+              <Text style={styles.headerSubtitle}>Monitorização Gêmeo Digital (IoT)</Text>
             </View>
           </View>
-        ))}
+          
+          <View style={styles.searchBox}>
+            <Search size={18} color="#94a3b8" />
+            <TextInput 
+              style={styles.searchInput} placeholder="Filtrar IP, MAC ou Nome..." 
+              placeholderTextColor="#64748b" value={busca} onChangeText={setBusca} 
+            />
+            <TouchableOpacity onPress={carregarHardware}>
+              <RefreshCw size={18} color="#38bdf8" />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* LISTA DE NÓS (DIGITAL TWINS) */}
+        {loading ? (
+          <ActivityIndicator size="large" color="#38bdf8" style={{ marginTop: 40 }} />
+        ) : nodesFiltrados.length > 0 ? (
+          nodesFiltrados.map(node => (
+            <View key={node.id} style={[styles.cyberCard, node.isOffline && styles.cyberCardOffline]}>
+              <View style={styles.cardHeader}>
+                <View style={styles.cardHeaderLeft}>
+                  <Cpu size={28} color={node.isOffline ? '#ef4444' : '#10b981'} />
+                  <View>
+                    <Text style={styles.nodeName}>{node.nome}</Text>
+                    <Text style={styles.nodeLocation}><MapPin size={10} color="#94a3b8"/> {node.filial || 'Matriz'}</Text>
+                  </View>
+                </View>
+                <View style={styles.statusBox}>
+                  <View style={[styles.led, node.isOffline ? styles.ledRed : styles.ledGreen]} />
+                  <Text style={[styles.statusText, node.isOffline ? {color: '#ef4444'} : {color: '#10b981'}]}>
+                    {node.isOffline ? 'OFFLINE' : 'ONLINE'}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.specsGrid}>
+                <View style={styles.specItem}>
+                  <Text style={styles.specLabel}>ENDEREÇO IP (WLAN)</Text>
+                  <Text style={[styles.specValue, {color: '#38bdf8'}]}>{node.ip}</Text>
+                </View>
+                <View style={styles.specItem}>
+                  <Text style={styles.specLabel}>ENDEREÇO MAC FÍSICO</Text>
+                  <Text style={styles.specValue}>{node.mac}</Text>
+                </View>
+                <View style={styles.specItem}>
+                  <Text style={styles.specLabel}>SINAL RÁDIO (WIFI)</Text>
+                  <Text style={styles.specValue}>{node.isOffline ? 'DROP' : `${node.signal} dBm`}</Text>
+                </View>
+                <View style={styles.specItem}>
+                  <Text style={styles.specLabel}>FIRMWARE ROM</Text>
+                  <Text style={[styles.specValue, {color: '#10b981'}]}>{node.fwVersion || 'v1.0.0'}</Text>
+                </View>
+              </View>
+
+              <View style={styles.actionGrid}>
+                <TouchableOpacity style={styles.btnDanger} onPress={() => dispararAcao('REBOOT_SIGTERM', node.nome)}>
+                  <Power size={14} color="#ef4444" />
+                  <Text style={styles.btnDangerText}>REBOOT (COLD)</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.btnInfo} onPress={() => dispararAcao('FLASH_OTA', node.nome)}>
+                  <RefreshCw size={14} color="#38bdf8" />
+                  <Text style={styles.btnInfoText}>INJETAR OTA</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ))
+        ) : (
+          <View style={styles.emptyState}>
+            <TerminalSquare size={48} color="#334155" />
+            <Text style={styles.emptyTitle}>NENHUM NÓ LOCALIZADO</Text>
+            <Text style={styles.emptyDesc}>Verifique a integridade do Broker MQTT ou limpe os filtros de pesquisa.</Text>
+          </View>
+        )}
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: theme.bg, padding: 15 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-  title: { fontSize: 18, fontWeight: 'bold', color: theme.textMain },
-  btnAdd: { flexDirection: 'row', alignItems: 'center', backgroundColor: theme.primary, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, gap: 6 },
-  btnAddText: { color: '#ffffff', fontWeight: 'bold', fontSize: 12 },
-  card: { backgroundColor: theme.card, padding: 15, borderRadius: 12, marginBottom: 15, borderWidth: 1, borderColor: theme.border },
-  cardTop: { flexDirection: 'row', alignItems: 'center', marginBottom: 15 },
-  iconBox: { backgroundColor: 'rgba(5, 150, 105, 0.1)', padding: 10, borderRadius: 8, marginRight: 12 },
-  infoBox: { flex: 1 },
-  eqName: { color: theme.textMain, fontSize: 16, fontWeight: 'bold' },
-  eqFilial: { color: theme.textMuted, fontSize: 12, marginTop: 4 },
-  specsRow: { flexDirection: 'row', gap: 10, marginBottom: 15 },
-  specBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1e293b', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, gap: 4 },
-  specText: { color: theme.textMuted, fontSize: 12, fontWeight: '600' },
-  actionsRow: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10, borderTopWidth: 1, borderTopColor: theme.border, paddingTop: 15 },
-  btnAction: { padding: 8, borderRadius: 6, borderWidth: 1 }
+  container: { flex: 1, backgroundColor: '#020617' },
+  scrollContent: { padding: 16, paddingBottom: 40 },
+  
+  headerCard: { backgroundColor: '#0b1120', padding: 16, borderRadius: 16, borderWidth: 1, borderColor: '#1e293b', marginBottom: 20 },
+  headerTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 },
+  iconBoxPrimary: { width: 48, height: 48, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { fontSize: 18, fontWeight: '900', color: '#fff', letterSpacing: 1 },
+  headerSubtitle: { fontSize: 12, color: '#94a3b8', fontWeight: '600', marginTop: 2 },
+  
+  searchBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#020617', borderWidth: 1, borderColor: '#1e293b', borderRadius: 10, paddingHorizontal: 12, height: 44 },
+  searchInput: { flex: 1, marginLeft: 8, color: '#fff', fontSize: 14, fontFamily: 'monospace' },
+
+  cyberCard: { backgroundColor: '#0b1120', borderRadius: 12, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: '#1e293b', borderTopWidth: 3, borderTopColor: '#10b981' },
+  cyberCardOffline: { borderTopColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.05)', borderColor: 'rgba(239,68,68,0.2)' },
+  
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 },
+  cardHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  nodeName: { fontSize: 16, fontWeight: '900', color: '#fff' },
+  nodeLocation: { fontSize: 11, color: '#94a3b8', fontWeight: 'bold', marginTop: 2 },
+  
+  statusBox: { alignItems: 'flex-end', gap: 4 },
+  led: { width: 8, height: 8, borderRadius: 4 },
+  ledGreen: { backgroundColor: '#10b981', shadowColor: '#10b981', shadowOpacity: 1, shadowRadius: 5, elevation: 5 },
+  ledRed: { backgroundColor: '#ef4444', shadowColor: '#ef4444', shadowOpacity: 1, shadowRadius: 5, elevation: 5 },
+  statusText: { fontSize: 10, fontWeight: '900', fontFamily: 'monospace' },
+
+  specsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, backgroundColor: '#020617', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#1e293b', marginBottom: 16 },
+  specItem: { width: '47%', marginBottom: 6 },
+  specLabel: { fontSize: 9, color: '#64748b', fontWeight: 'bold', marginBottom: 4 },
+  specValue: { fontSize: 12, color: '#cbd5e1', fontFamily: 'monospace', fontWeight: 'bold' },
+
+  actionGrid: { flexDirection: 'row', gap: 10 },
+  btnDanger: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: 'rgba(239,68,68,0.1)', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(239,68,68,0.3)' },
+  btnDangerText: { color: '#ef4444', fontSize: 10, fontWeight: '900' },
+  btnInfo: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: 'rgba(56,189,248,0.1)', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(56,189,248,0.3)' },
+  btnInfoText: { color: '#38bdf8', fontSize: 10, fontWeight: '900' },
+
+  emptyState: { alignItems: 'center', justifyContent: 'center', padding: 40, backgroundColor: '#0b1120', borderRadius: 16, borderWidth: 1, borderColor: '#1e293b', borderStyle: 'dashed' },
+  emptyTitle: { color: '#fff', fontSize: 14, fontWeight: '900', marginTop: 16, letterSpacing: 1 },
+  emptyDesc: { color: '#64748b', fontSize: 11, textAlign: 'center', marginTop: 8 }
 });
